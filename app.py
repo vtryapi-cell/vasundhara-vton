@@ -112,6 +112,14 @@ def tryon():
     except requests.RequestException as exc:
         return jsonify({"error": f"Could not reach the FASHN API: {exc}"}), 502
 
+@app.get("/test")
+def test():
+    return "VASUNDHARA VTON IS LIVE"
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8000"))
+    app.run(host="0.0.0.0", port=port)
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
     app.run(host="0.0.0.0", port=port)
