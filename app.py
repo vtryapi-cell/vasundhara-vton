@@ -18,6 +18,13 @@ def health():
         "message": "VASUNDHARA VTON SERVER IS RUNNING"
     })
 
+@app.get("/routes")
+def routes():
+    return jsonify([
+        str(rule)
+        for rule in app.url_map.iter_rules()
+    ])
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
