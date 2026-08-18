@@ -55,7 +55,7 @@ def tryon():
             "garment_image": garment_image,
             "category": "auto",
             "garment_photo_type": "auto",
-            "mode": "balanced",
+            "mode": "quality",
             "num_samples": 1,
             "output_format": "png"
         }
