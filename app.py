@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
@@ -18,12 +18,14 @@ def health():
         "message": "VASUNDHARA VTON SERVER IS RUNNING"
     })
 
-@app.get("/routes")
-def routes():
-    return jsonify([
-        str(rule)
-        for rule in app.url_map.iter_rules()
-    ])
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({
+        "error": "Flask 404",
+        "requested_path": request.path,
+        "app_file": __file__,
+        "routes": [str(rule) for rule in app.url_map.iter_rules()]
+    }), 404
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
