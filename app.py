@@ -3,6 +3,10 @@ from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
+@app.get("/debug")
+def debug():
+    return "THIS IS THE NEW APP.PY"
+
 @app.get("/")
 def home():
     return "VASUNDHARA VTON IS LIVE"
