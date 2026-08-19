@@ -124,7 +124,7 @@ tryBtn.addEventListener('click', async () => {
   form.append('garment_image', garment.files[0]);
 
   try {
-    const response = await fetch('/api/tryon', { method: 'POST', body: form });
+    const response = await fetch('/api/openai-tryon', { method: 'POST', body: form });
     const data = await response.json();
 
     if (!response.ok || !data.success) {
