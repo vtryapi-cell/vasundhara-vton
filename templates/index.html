@@ -120,8 +120,8 @@ tryBtn.addEventListener('click', async () => {
   result.classList.add('hidden');
 
   const form = new FormData();
-  form.append('person', person.files[0]);
-  form.append('garment', garment.files[0]);
+  form.append('model_image', person.files[0]);
+  form.append('garment_image', garment.files[0]);
 
   try {
     const response = await fetch('/api/tryon', { method: 'POST', body: form });
