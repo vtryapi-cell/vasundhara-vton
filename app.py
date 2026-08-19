@@ -1,32 +1,29 @@
 import os
-import io
 import time
 import base64
 import requests
 
 from flask import Flask, jsonify, request, render_template
-from openai import OpenAI
 
 app = Flask(__name__)
 
 # ============================================================
-# API KEYS
+# API CONFIGURATION
 # ============================================================
 
-FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
 
+OPENAI_URL = "https://api.openai.com/v1/images/edits"
 FASHN_URL = "https://api.fashn.ai/v1"
 
-openai_client = None
-
-if OPENAI_API_KEY:
-    openai_client = OpenAI(api_key=OPENAI_API_KEY)
-
-print("🔥 VASUNDHARA VTON APP LOADED")
+print("========================================")
+print("VASUNDHARA VTON APP STARTING")
+print("========================================")
 print("APP FILE:", __file__)
-print("FASHN API KEY PRESENT:", bool(FASHN_API_KEY))
-print("OPENAI API KEY PRESENT:", bool(OPENAI_API_KEY))
+print("OPENAI KEY PRESENT:", bool(OPENAI_API_KEY))
+print("FASHN KEY PRESENT:", bool(FASHN_API_KEY))
+print("========================================")
 
 
 # ============================================================
@@ -41,7 +38,7 @@ def home():
         print("HOME ERROR:", repr(e))
         return """
         <h1>VASUNDHARA VTON IS LIVE</h1>
-        <p>Website is running.</p>
+        <p>Server is running.</p>
         """
 
 
@@ -54,8 +51,8 @@ def health():
     return jsonify({
         "ok": True,
         "message": "VASUNDHARA VTON SERVER IS RUNNING",
-        "fashn_key_present": bool(FASHN_API_KEY),
-        "openai_key_present": bool(OPENAI_API_KEY)
+        "openai_key_present": bool(OPENAI_API_KEY),
+        "fashn_key_present": bool(FASHN_API_KEY)
     })
 
 
@@ -68,8 +65,8 @@ def debug():
     return jsonify({
         "status": "OK",
         "app_file": __file__,
-        "fashn_key_present": bool(FASHN_API_KEY),
         "openai_key_present": bool(OPENAI_API_KEY),
+        "fashn_key_present": bool(FASHN_API_KEY),
         "routes": [
             str(rule)
             for rule in app.url_map.iter_rules()
@@ -78,25 +75,55 @@ def debug():
 
 
 # ============================================================
-# FASHN TRY-ON
+# GET UPLOADED FILES
+# Supports both:
+# model_image + garment_image
+# and:
+# person + garment
 # ============================================================
 
-@app.post("/api/tryon")
-def tryon():
+def get_uploaded_files():
 
-    if not FASHN_API_KEY:
+    model_file = request.files.get("model_image")
+
+    if model_file is None:
+        model_file = request.files.get("person")
+
+    garment_file = request.files.get("garment_image")
+
+    if garment_file is None:
+        garment_file = request.files.get("garment")
+
+    return model_file, garment_file
+
+
+# ============================================================
+# OPENAI SAREE TRY-ON
+# ============================================================
+
+@app.post("/api/openai-tryon")
+def openai_tryon():
+
+    print("")
+    print("========================================")
+    print("OPENAI TRY-ON REQUEST RECEIVED")
+    print("========================================")
+
+    if not OPENAI_API_KEY:
         return jsonify({
             "success": False,
-            "error": "FASHN_API_KEY is not configured in Cloud Run."
+            "error": "OPENAI_API_KEY is not configured in Cloud Run."
         }), 500
 
-    if "model_image" not in request.files:
+    model_file, garment_file = get_uploaded_files()
+
+    if model_file is None:
         return jsonify({
             "success": False,
             "error": "model_image is missing."
         }), 400
 
-    if "garment_image" not in request.files:
+    if garment_file is None:
         return jsonify({
             "success": False,
             "error": "garment_image is missing."
@@ -104,30 +131,441 @@ def tryon():
 
     try:
 
-        model_file = request.files["model_image"]
-        garment_file = request.files["garment_image"]
+        # ----------------------------------------------------
+        # READ MODEL IMAGE
+        # ----------------------------------------------------
+
+        model_data = model_file.read()
+
+        if not model_data:
+            return jsonify({
+                "success": False,
+                "error": "Model image is empty."
+            }), 400
+
+
+        # ----------------------------------------------------
+        # READ SAREE IMAGE
+        # ----------------------------------------------------
+
+        garment_data = garment_file.read()
+
+        if not garment_data:
+            return jsonify({
+                "success": False,
+                "error": "Saree image is empty."
+            }), 400
+
+
+        print(
+            "MODEL:",
+            model_file.filename,
+            len(model_data),
+            "bytes"
+        )
+
+        print(
+            "SAREE:",
+            garment_file.filename,
+            len(garment_data),
+            "bytes"
+        )
+
+
+        # ----------------------------------------------------
+        # SAREE PROMPT
+        # ----------------------------------------------------
+
+        prompt = """
+Create a photorealistic Indian fashion virtual try-on.
+
+IMAGE 1 is the person/model.
+IMAGE 2 is the saree product photograph.
+
+Dress the exact person from IMAGE 1 in the exact
+saree shown in IMAGE 2.
+
+The final clothing MUST be a traditional Indian saree.
+
+Do NOT turn the saree into:
+
+- a dress
+- a gown
+- a skirt
+- a jumpsuit
+- a western one-piece
+- a lehenga
+- a salwar suit
+- a kurti
+
+Create realistic traditional Indian saree draping.
+
+The saree must:
+
+- wrap naturally around the waist
+- cover the lower body
+- have realistic front pleats
+- have natural fabric folds
+- have a realistic pallu
+- place the pallu naturally over one shoulder
+- look physically believable
+
+Use the EXACT product shown in IMAGE 2.
+
+Preserve the saree's:
+
+- green color
+- orange color
+- orange border
+- woven patterns
+- decorative motifs
+- pallu
+- border
+- fabric appearance
+- overall design
+
+Do not invent a different saree.
+Do not change the saree colors.
+Do not replace it with a generic garment.
+
+Keep the same person from IMAGE 1.
+
+Preserve:
+
+- face
+- facial features
+- identity
+- hairstyle
+- skin tone
+- body proportions
+- pose
+
+Do not create a different person.
+
+Keep the background similar to IMAGE 1.
+Keep the lighting realistic.
+
+The final image should look like a professional
+Indian fashion e-commerce photograph.
+
+The person must clearly be wearing the saree
+shown in IMAGE 2.
+
+Make the saree draping elegant, natural and realistic.
+"""
+
+
+        # ----------------------------------------------------
+        # FILE INFORMATION
+        # ----------------------------------------------------
+
+        model_filename = (
+            model_file.filename or "model.jpg"
+        )
+
+        garment_filename = (
+            garment_file.filename or "saree.jpg"
+        )
+
+        model_content_type = (
+            model_file.content_type or "image/jpeg"
+        )
+
+        garment_content_type = (
+            garment_file.content_type or "image/jpeg"
+        )
+
+
+        # ----------------------------------------------------
+        # OPENAI MULTIPART REQUEST
+        # ----------------------------------------------------
+
+        files = [
+
+            (
+                "image[]",
+                (
+                    model_filename,
+                    model_data,
+                    model_content_type
+                )
+            ),
+
+            (
+                "image[]",
+                (
+                    garment_filename,
+                    garment_data,
+                    garment_content_type
+                )
+            )
+
+        ]
+
+
+        data = {
+            "model": "gpt-image-2",
+            "prompt": prompt,
+            "size": "1024x1536",
+            "quality": "medium"
+        }
+
+
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}"
+        }
+
+
+        # ----------------------------------------------------
+        # CALL OPENAI
+        # ----------------------------------------------------
+
+        print("🚀 Calling OpenAI image edit API...")
+
+        start_time = time.time()
+
+        response = requests.post(
+            OPENAI_URL,
+            headers=headers,
+            files=files,
+            data=data,
+            timeout=240
+        )
+
+        elapsed = time.time() - start_time
+
+        print(
+            "OPENAI STATUS:",
+            response.status_code
+        )
+
+        print(
+            "OPENAI TIME:",
+            round(elapsed, 2),
+            "seconds"
+        )
+
+        print(
+            "OPENAI RESPONSE:",
+            response.text[:5000]
+        )
+
+
+        # ----------------------------------------------------
+        # HANDLE OPENAI ERROR
+        # ----------------------------------------------------
+
+        if not response.ok:
+
+            try:
+                error_json = response.json()
+            except Exception:
+                error_json = {}
+
+            error_message = ""
+
+            if isinstance(error_json.get("error"), dict):
+                error_message = (
+                    error_json["error"].get("message")
+                    or ""
+                )
+
+            if not error_message:
+                error_message = (
+                    response.text[:5000]
+                    or "OpenAI image generation failed."
+                )
+
+            return jsonify({
+                "success": False,
+                "error": "OpenAI image generation failed.",
+                "details": error_message,
+                "openai_status": response.status_code
+            }), 502
+
+
+        # ----------------------------------------------------
+        # PARSE OPENAI RESPONSE
+        # ----------------------------------------------------
+
+        try:
+            result = response.json()
+        except Exception as e:
+
+            return jsonify({
+                "success": False,
+                "error": "OpenAI returned invalid JSON.",
+                "details": str(e)
+            }), 502
+
+
+        # ----------------------------------------------------
+        # CHECK DATA
+        # ----------------------------------------------------
+
+        if not result.get("data"):
+
+            return jsonify({
+                "success": False,
+                "error": "OpenAI returned no image.",
+                "response": result
+            }), 502
+
+
+        image_b64 = (
+            result["data"][0].get("b64_json")
+        )
+
+
+        if not image_b64:
+
+            return jsonify({
+                "success": False,
+                "error": "OpenAI returned no image data.",
+                "response": result
+            }), 502
+
+
+        # ----------------------------------------------------
+        # RETURN IMAGE
+        # ----------------------------------------------------
+
+        image_url = (
+            "data:image/png;base64,"
+            + image_b64
+        )
+
+
+        print("========================================")
+        print("OPENAI RESULT READY")
+        print("========================================")
+
+
+        return jsonify({
+            "success": True,
+            "image_url": image_url,
+            "provider": "openai",
+            "model": "gpt-image-2"
+        })
+
+
+    except requests.exceptions.Timeout:
+
+        print("❌ OPENAI REQUEST TIMED OUT")
+
+        return jsonify({
+            "success": False,
+            "error": "OpenAI request timed out."
+        }), 504
+
+
+    except requests.exceptions.RequestException as e:
+
+        print(
+            "❌ OPENAI NETWORK ERROR:",
+            repr(e)
+        )
+
+        return jsonify({
+            "success": False,
+            "error": "Could not connect to OpenAI.",
+            "details": str(e)
+        }), 502
+
+
+    except Exception as e:
+
+        print(
+            "❌ OPENAI UNEXPECTED ERROR:",
+            repr(e)
+        )
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ============================================================
+# MAIN TRY-ON ROUTE
+#
+# This means your existing website can continue
+# using /api/tryon, but it will use OpenAI.
+# ============================================================
+
+@app.post("/api/tryon")
+def tryon():
+
+    print("🔄 /api/tryon -> OpenAI")
+
+    return openai_tryon()
+
+
+# ============================================================
+# OPTIONAL FASHN ROUTE
+# ============================================================
+
+@app.post("/api/fashn-tryon")
+def fashn_tryon():
+
+    if not FASHN_API_KEY:
+
+        return jsonify({
+            "success": False,
+            "error": "FASHN_API_KEY is not configured."
+        }), 500
+
+
+    model_file, garment_file = get_uploaded_files()
+
+
+    if model_file is None:
+
+        return jsonify({
+            "success": False,
+            "error": "model_image is missing."
+        }), 400
+
+
+    if garment_file is None:
+
+        return jsonify({
+            "success": False,
+            "error": "garment_image is missing."
+        }), 400
+
+
+    try:
 
         model_data = model_file.read()
         garment_data = garment_file.read()
 
-        if not model_data:
-            raise ValueError("Model image is empty.")
-
-        if not garment_data:
-            raise ValueError("Garment image is empty.")
-
-        model_type = model_file.content_type or "image/jpeg"
-        garment_type = garment_file.content_type or "image/jpeg"
 
         model_image = (
-            f"data:{model_type};base64,"
-            + base64.b64encode(model_data).decode("utf-8")
+            "data:"
+            + (
+                model_file.content_type
+                or "image/jpeg"
+            )
+            + ";base64,"
+            + base64.b64encode(
+                model_data
+            ).decode("utf-8")
         )
 
+
         garment_image = (
-            f"data:{garment_type};base64,"
-            + base64.b64encode(garment_data).decode("utf-8")
+            "data:"
+            + (
+                garment_file.content_type
+                or "image/jpeg"
+            )
+            + ";base64,"
+            + base64.b64encode(
+                garment_data
+            ).decode("utf-8")
         )
+
 
         payload = {
             "model_name": "tryon-v1.6",
@@ -142,260 +580,120 @@ def tryon():
             }
         }
 
-        headers = {
-            "Authorization": f"Bearer {FASHN_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
-        print("🚀 Sending request to FASHN...")
 
         response = requests.post(
             f"{FASHN_URL}/run",
             json=payload,
-            headers=headers,
+            headers={
+                "Authorization":
+                    f"Bearer {FASHN_API_KEY}",
+                "Content-Type":
+                    "application/json"
+            },
             timeout=60
         )
 
-        print("FASHN STATUS:", response.status_code)
-        print("FASHN RESPONSE:", response.text[:1000])
 
         if not response.ok:
+
             return jsonify({
                 "success": False,
-                "error": "FASHN API request failed.",
-                "details": response.text
+                "error": "FASHN request failed.",
+                "details": response.text[:3000]
             }), 502
+
 
         run_data = response.json()
+
         prediction_id = run_data.get("id")
 
+
         if not prediction_id:
+
             return jsonify({
                 "success": False,
-                "error": "FASHN did not return a prediction ID.",
+                "error": "FASHN returned no prediction ID.",
                 "response": run_data
             }), 502
+
 
         for _ in range(60):
 
             time.sleep(2)
 
+
             status_response = requests.get(
                 f"{FASHN_URL}/status/{prediction_id}",
                 headers={
-                    "Authorization": f"Bearer {FASHN_API_KEY}"
+                    "Authorization":
+                        f"Bearer {FASHN_API_KEY}"
                 },
                 timeout=30
             )
 
+
             status_data = status_response.json()
+
             status = status_data.get("status")
 
-            print("FASHN STATUS:", status)
+
+            print(
+                "FASHN STATUS:",
+                status
+            )
+
 
             if status == "completed":
 
-                output = status_data.get("output", [])
+                output = status_data.get(
+                    "output",
+                    []
+                )
+
 
                 if not output:
+
                     return jsonify({
                         "success": False,
-                        "error": "FASHN completed but returned no output."
+                        "error": "FASHN returned no output."
                     }), 502
+
 
                 return jsonify({
                     "success": True,
                     "image_url": output[0],
-                    "prediction_id": prediction_id,
-                    "provider": "fashn"
+                    "provider": "fashn",
+                    "prediction_id": prediction_id
                 })
+
 
             if status in [
                 "failed",
-                "canceled",
                 "cancelled",
+                "canceled",
                 "error"
             ]:
 
                 return jsonify({
                     "success": False,
                     "error": "FASHN try-on failed.",
-                    "details": status_data.get("error"),
-                    "prediction_id": prediction_id
+                    "details":
+                        status_data.get("error")
                 }), 502
 
+
         return jsonify({
             "success": False,
-            "error": "FASHN prediction timed out.",
-            "prediction_id": prediction_id
+            "error": "FASHN prediction timed out."
         }), 504
 
-    except Exception as e:
-
-        print("❌ FASHN ERROR:", repr(e))
-
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-
-# ============================================================
-# OPENAI SAREE TRY-ON
-# ============================================================
-
-@app.post("/api/openai-tryon")
-def openai_tryon():
-
-    print("🤖 OPENAI SAREE TRY-ON REQUEST RECEIVED")
-
-    if not OPENAI_API_KEY or not openai_client:
-        return jsonify({
-            "success": False,
-            "error": "OPENAI_API_KEY is not configured in Cloud Run."
-        }), 500
-
-    if "model_image" not in request.files:
-        return jsonify({
-            "success": False,
-            "error": "model_image is missing."
-        }), 400
-
-    if "garment_image" not in request.files:
-        return jsonify({
-            "success": False,
-            "error": "garment_image is missing."
-        }), 400
-
-    try:
-
-        model_file = request.files["model_image"]
-        garment_file = request.files["garment_image"]
-
-        model_data = model_file.read()
-        garment_data = garment_file.read()
-
-        if not model_data:
-            raise ValueError("Model image is empty.")
-
-        if not garment_data:
-            raise ValueError("Garment image is empty.")
-
-        model_buffer = io.BytesIO(model_data)
-        model_buffer.name = model_file.filename or "model.jpg"
-
-        garment_buffer = io.BytesIO(garment_data)
-        garment_buffer.name = garment_file.filename or "saree.jpg"
-
-        prompt = """
-Create a photorealistic Indian fashion virtual try-on.
-
-IMAGE 1 is the person/model.
-IMAGE 2 is the saree product photograph.
-
-Dress the person in IMAGE 1 with the SAME saree shown in IMAGE 2.
-
-This MUST be a traditional Indian saree.
-
-Do NOT turn the saree into:
-- a dress
-- a gown
-- a skirt
-- a western one-piece
-- a jumpsuit
-- a lehenga
-
-Create realistic traditional Indian saree draping.
-
-The saree must:
-- wrap naturally around the waist
-- cover the lower body naturally
-- have realistic saree pleats
-- have a natural pallu
-- place the pallu naturally over one shoulder
-- look physically believable
-
-Preserve the actual product design from IMAGE 2.
-
-Preserve:
-- green color
-- orange color
-- orange border
-- woven patterns
-- pallu design
-- fabric appearance
-- overall saree design
-
-Do not replace the product with a generic saree.
-
-Keep the person from IMAGE 1 as the same person.
-
-Preserve:
-- face
-- facial features
-- identity
-- hairstyle
-- skin tone
-- body proportions
-- pose
-
-Keep the background and lighting close to IMAGE 1.
-
-The final result should look like a professional
-Indian fashion e-commerce photograph.
-
-The result must clearly show the same person
-wearing the same saree product.
-
-Make the saree draping realistic, elegant and natural.
-"""
-
-        print("🚀 Sending model + saree to OpenAI...")
-
-        result = openai_client.images.edit(
-            model="gpt-image-2",
-            image=[
-                model_buffer,
-                garment_buffer
-            ],
-            prompt=prompt,
-            size="1024x1536",
-            quality="medium"
-        )
-
-        print("✅ OpenAI response received")
-
-        if not result.data:
-            return jsonify({
-                "success": False,
-                "error": "OpenAI returned no image."
-            }), 502
-
-        image_b64 = result.data[0].b64_json
-
-        if not image_b64:
-            return jsonify({
-                "success": False,
-                "error": "OpenAI returned an empty image."
-            }), 502
-
-        image_url = (
-            "data:image/png;base64,"
-            + image_b64
-        )
-
-        print("✅ OPENAI SAREE RESULT READY")
-
-        return jsonify({
-            "success": True,
-            "image_url": image_url,
-            "provider": "openai",
-            "model": "gpt-image-2"
-        })
 
     except Exception as e:
 
-        print("❌ OPENAI TRY-ON ERROR:", repr(e))
+        print(
+            "FASHN ERROR:",
+            repr(e)
+        )
 
         return jsonify({
             "success": False,
@@ -411,6 +709,7 @@ Make the saree draping realistic, elegant and natural.
 def not_found(error):
 
     return jsonify({
+        "success": False,
         "error": "Flask 404",
         "requested_path": request.path
     }), 404
