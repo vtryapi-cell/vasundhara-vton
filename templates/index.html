@@ -1,82 +1,730 @@
-tryBtn.addEventListener('click', async () => {
-  if (!person.files[0] || !garment.files[0]) {
-    statusText.textContent = 'Please upload both images.';
-    return;
-  }
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  tryBtn.disabled = true;
-  tryBtn.classList.add('loading');
-  tryBtn.innerHTML = 'Creating your try-on <span>…</span>';
-  statusText.textContent = 'AI is processing your images. Please wait.';
-  result.classList.add('hidden');
+  <title>Vasundhara Pro9 — Virtual Try-On</title>
 
-  const form = new FormData();
-  form.append('model_image', person.files[0]);
-  form.append('garment_image', garment.files[0]);
+  <meta
+    name="description"
+    content="See how a saree or garment looks on you with Vasundhara Pro9 Virtual Try-On."
+  >
 
-  try {
-    console.log('Sending try-on request...');
+  <link rel="stylesheet" href="/static/style.css">
+</head>
 
-    const response = await fetch('/api/openai-tryon', {
-      method: 'POST',
-      body: form
-    });
+<body>
 
-    console.log('API response status:', response.status);
+  <!-- ============================================================
+       HEADER
+  ============================================================ -->
 
-    const text = await response.text();
-    console.log('API response:', text);
+  <header class="nav">
+    <div class="brand">
+      Vasundhara <span>Pro9</span>
+    </div>
 
-    let data;
+    <div class="nav-pill">
+      AI Virtual Try-On
+    </div>
+  </header>
 
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error(
-        'Server returned invalid response: ' + text.substring(0, 500)
-      );
+
+  <!-- ============================================================
+       MAIN
+  ============================================================ -->
+
+  <main>
+
+    <!-- HERO -->
+
+    <section class="hero">
+
+      <p class="eyebrow">
+        VASUNDHARA PRO9
+      </p>
+
+      <h1>
+        Try it on.<br>
+        <em>See yourself.</em>
+      </h1>
+
+      <p class="lead">
+        Upload your photo and a saree or garment.
+        Our AI creates a realistic virtual try-on preview in seconds.
+      </p>
+
+      <a class="hero-link" href="#tryon">
+        Start your try-on <span>↓</span>
+      </a>
+
+    </section>
+
+
+    <!-- ============================================================
+         UPLOAD AREA
+    ============================================================ -->
+
+    <section id="tryon" class="workspace">
+
+      <!-- PERSON -->
+
+      <div class="upload-card">
+
+        <div class="card-head">
+          <span>01</span>
+          <h2>Your photo</h2>
+        </div>
+
+        <label class="dropzone" id="personZone">
+
+          <input
+            id="person"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+          >
+
+          <div class="upload-icon">
+            ＋
+          </div>
+
+          <strong>
+            Upload your photo
+          </strong>
+
+          <small>
+            JPG, PNG or WebP
+          </small>
+
+          <img
+            class="preview"
+            id="personPreview"
+            alt="Your photo preview"
+          >
+
+        </label>
+
+      </div>
+
+
+      <!-- GARMENT -->
+
+      <div class="upload-card">
+
+        <div class="card-head">
+          <span>02</span>
+          <h2>Saree / garment</h2>
+        </div>
+
+        <label class="dropzone" id="garmentZone">
+
+          <input
+            id="garment"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+          >
+
+          <div class="upload-icon">
+            ＋
+          </div>
+
+          <strong>
+            Upload garment photo
+          </strong>
+
+          <small>
+            Flat-lay or on-model photo
+          </small>
+
+          <img
+            class="preview"
+            id="garmentPreview"
+            alt="Garment preview"
+          >
+
+        </label>
+
+      </div>
+
+    </section>
+
+
+    <!-- ============================================================
+         TRY ON BUTTON
+    ============================================================ -->
+
+    <section class="action">
+
+      <button
+        id="tryBtn"
+        type="button"
+        disabled
+      >
+        Try On <span>→</span>
+      </button>
+
+      <p id="status">
+        Upload both images to begin.
+      </p>
+
+    </section>
+
+
+    <!-- ============================================================
+         RESULT
+    ============================================================ -->
+
+    <section
+      id="result"
+      class="result hidden"
+    >
+
+      <div class="result-head">
+
+        <div>
+
+          <p class="eyebrow">
+            YOUR RESULT
+          </p>
+
+          <h2>
+            Virtual try-on
+          </h2>
+
+        </div>
+
+        <a
+          id="download"
+          class="download"
+          target="_blank"
+          rel="noopener"
+        >
+          Open / Download ↗
+        </a>
+
+      </div>
+
+
+      <div class="result-frame">
+
+        <img
+          id="resultImage"
+          alt="Virtual try-on result"
+        >
+
+      </div>
+
+    </section>
+
+
+    <!-- ============================================================
+         TRUST
+    ============================================================ -->
+
+    <section class="trust">
+
+      <div>
+        <strong>Simple</strong>
+        <span>Two photos to start</span>
+      </div>
+
+      <div>
+        <strong>Private</strong>
+        <span>Images are sent only for processing</span>
+      </div>
+
+      <div>
+        <strong>Fast</strong>
+        <span>Results typically arrive in seconds</span>
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <!-- ============================================================
+       FOOTER
+  ============================================================ -->
+
+  <footer>
+
+    <span>
+      © Vasundhara Pro9
+    </span>
+
+    <span>
+      Virtual Try-On
+    </span>
+
+  </footer>
+
+
+  <!-- ============================================================
+       JAVASCRIPT
+  ============================================================ -->
+
+  <script>
+
+    /*
+     * ============================================================
+     * ELEMENTS
+     * ============================================================
+     */
+
+    const person =
+      document.getElementById("person");
+
+    const garment =
+      document.getElementById("garment");
+
+    const personPreview =
+      document.getElementById("personPreview");
+
+    const garmentPreview =
+      document.getElementById("garmentPreview");
+
+    const tryBtn =
+      document.getElementById("tryBtn");
+
+    const statusText =
+      document.getElementById("status");
+
+    const result =
+      document.getElementById("result");
+
+    const resultImage =
+      document.getElementById("resultImage");
+
+    const download =
+      document.getElementById("download");
+
+
+    /*
+     * ============================================================
+     * IMAGE PREVIEW
+     * ============================================================
+     */
+
+    function preview(input, img) {
+
+      const file = input.files[0];
+
+      if (!file) {
+        return;
+      }
+
+      /*
+       * Basic image validation
+       */
+
+      if (!file.type.startsWith("image/")) {
+
+        statusText.textContent =
+          "Please select an image file.";
+
+        input.value = "";
+
+        updateButton();
+
+        return;
+      }
+
+
+      /*
+       * Preview image
+       */
+
+      img.src =
+        URL.createObjectURL(file);
+
+      img.classList.add("show");
+
+      input.parentElement.classList.add("has-image");
+
+
+      /*
+       * Update button
+       */
+
+      updateButton();
+
     }
 
-    if (!response.ok || !data.success) {
-      throw new Error(
-        data.details ||
-        data.error ||
-        'Try-on failed.'
-      );
+
+    /*
+     * ============================================================
+     * BUTTON STATE
+     * ============================================================
+     */
+
+    function updateButton() {
+
+      const hasPerson =
+        !!person.files[0];
+
+      const hasGarment =
+        !!garment.files[0];
+
+
+      tryBtn.disabled =
+        !(hasPerson && hasGarment);
+
+
+      /*
+       * Only show the normal ready message
+       * when the button is not currently processing.
+       */
+
+      if (!tryBtn.classList.contains("loading")) {
+
+        if (!hasPerson || !hasGarment) {
+
+          statusText.textContent =
+            "Upload both images to begin.";
+
+        } else {
+
+          statusText.textContent =
+            "Ready — click Try On.";
+
+        }
+
+      }
+
     }
 
-    if (!data.image_url) {
-      throw new Error('API returned success but no image.');
-    }
 
-    resultImage.src = data.image_url;
-    download.href = data.image_url;
+    /*
+     * ============================================================
+     * FILE INPUT EVENTS
+     * ============================================================
+     */
 
-    result.classList.remove('hidden');
+    person.addEventListener(
+      "change",
+      function () {
 
-    statusText.textContent =
-      'Done — your virtual try-on is ready.';
+        preview(
+          person,
+          personPreview
+        );
 
-    result.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start'
-    });
+      }
+    );
 
-  } catch (err) {
 
-    console.error('TRY-ON ERROR:', err);
+    garment.addEventListener(
+      "change",
+      function () {
 
-    statusText.textContent =
-      'ERROR: ' + err.message;
+        preview(
+          garment,
+          garmentPreview
+        );
 
-  } finally {
+      }
+    );
 
-    tryBtn.disabled = false;
-    tryBtn.classList.remove('loading');
-    tryBtn.innerHTML = 'Try On <span>→</span>';
 
-    // IMPORTANT:
-    // Do NOT call updateButton() here.
-    // It was hiding the actual API error.
-  }
-});
+    /*
+     * ============================================================
+     * TRY ON
+     * ============================================================
+     */
+
+    tryBtn.addEventListener(
+      "click",
+      async function () {
+
+        /*
+         * Make sure both files exist.
+         */
+
+        if (
+          !person.files[0] ||
+          !garment.files[0]
+        ) {
+
+          statusText.textContent =
+            "Please upload both images.";
+
+          return;
+
+        }
+
+
+        /*
+         * Disable button while processing.
+         */
+
+        tryBtn.disabled = true;
+
+        tryBtn.classList.add("loading");
+
+        tryBtn.innerHTML =
+          "Creating your try-on <span>…</span>";
+
+
+        statusText.textContent =
+          "AI is processing your images. Please wait.";
+
+
+        /*
+         * Hide previous result.
+         */
+
+        result.classList.add("hidden");
+
+
+        /*
+         * ========================================================
+         * CREATE MULTIPART FORM
+         * ========================================================
+         */
+
+        const form =
+          new FormData();
+
+
+        form.append(
+          "model_image",
+          person.files[0]
+        );
+
+
+        form.append(
+          "garment_image",
+          garment.files[0]
+        );
+
+
+        /*
+         * ========================================================
+         * CALL BACKEND
+         * ========================================================
+         *
+         * IMPORTANT:
+         * This is your Cloud Run Flask endpoint.
+         */
+
+        try {
+
+          console.log(
+            "================================"
+          );
+
+          console.log(
+            "Sending try-on request..."
+          );
+
+          console.log(
+            "Person:",
+            person.files[0].name,
+            person.files[0].type,
+            person.files[0].size
+          );
+
+          console.log(
+            "Garment:",
+            garment.files[0].name,
+            garment.files[0].type,
+            garment.files[0].size
+          );
+
+
+          const response =
+            await fetch(
+              "/api/openai-tryon",
+              {
+                method: "POST",
+                body: form
+              }
+            );
+
+
+          console.log(
+            "API response status:",
+            response.status
+          );
+
+
+          /*
+           * Read response as text first.
+           *
+           * This is important because if Flask/Cloud Run
+           * returns HTML instead of JSON, we can see it.
+           */
+
+          const text =
+            await response.text();
+
+
+          console.log(
+            "API response:",
+            text
+          );
+
+
+          /*
+           * ======================================================
+           * PARSE JSON
+           * ======================================================
+           */
+
+          let data;
+
+
+          try {
+
+            data =
+              JSON.parse(text);
+
+          } catch (jsonError) {
+
+            throw new Error(
+              "Server returned invalid response: " +
+              text.substring(0, 1000)
+            );
+
+          }
+
+
+          /*
+           * ======================================================
+           * API ERROR
+           * ======================================================
+           */
+
+          if (
+            !response.ok ||
+            !data.success
+          ) {
+
+            throw new Error(
+              data.details ||
+              data.error ||
+              "Try-on failed."
+            );
+
+          }
+
+
+          /*
+           * ======================================================
+           * CHECK IMAGE
+           * ======================================================
+           */
+
+          if (!data.image_url) {
+
+            throw new Error(
+              "API returned success but no image."
+            );
+
+          }
+
+
+          /*
+           * ======================================================
+           * DISPLAY RESULT
+           * ======================================================
+           */
+
+          resultImage.src =
+            data.image_url;
+
+
+          download.href =
+            data.image_url;
+
+
+          result.classList.remove(
+            "hidden"
+          );
+
+
+          statusText.textContent =
+            "Done — your virtual try-on is ready.";
+
+
+          /*
+           * Scroll to result.
+           */
+
+          result.scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+          });
+
+
+          console.log(
+            "TRY-ON SUCCESS"
+          );
+
+
+        } catch (err) {
+
+          /*
+           * ======================================================
+           * IMPORTANT ERROR DISPLAY
+           * ======================================================
+           *
+           * We intentionally do NOT call updateButton()
+           * here because it would hide the actual error.
+           */
+
+          console.error(
+            "TRY-ON ERROR:",
+            err
+          );
+
+
+          statusText.textContent =
+            "ERROR: " + err.message;
+
+
+        } finally {
+
+          /*
+           * Re-enable button.
+           */
+
+          tryBtn.disabled =
+            false;
+
+          tryBtn.classList.remove(
+            "loading"
+          );
+
+          tryBtn.innerHTML =
+            "Try On <span>→</span>";
+
+
+          /*
+           * DO NOT call updateButton() here.
+           *
+           * Calling it here was hiding the real API error.
+           */
+
+        }
+
+      }
+    );
+
+
+    /*
+     * ============================================================
+     * INITIAL STATE
+     * ============================================================
+     */
+
+    updateButton();
+
+  </script>
+
+</body>
+</html>
+```
