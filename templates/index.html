@@ -1,117 +1,8 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vasundhara Pro9 — Virtual Try-On</title>
-  <meta name="description" content="See how a saree or garment looks on you with Vasundhara Pro9 Virtual Try-On.">
-  <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-  <header class="nav">
-    <div class="brand">Vasundhara <span>Pro9</span></div>
-    <div class="nav-pill">AI Virtual Try-On</div>
-  </header>
-
-  <main>
-    <section class="hero">
-      <p class="eyebrow">VASUNDHARA PRO9</p>
-      <h1>Try it on.<br><em>See yourself.</em></h1>
-      <p class="lead">Upload your photo and a saree or garment. Our AI creates a realistic virtual try-on preview in seconds.</p>
-      <a class="hero-link" href="#tryon">Start your try-on <span>↓</span></a>
-    </section>
-
-    <section id="tryon" class="workspace">
-      <div class="upload-card">
-        <div class="card-head">
-          <span>01</span>
-          <h2>Your photo</h2>
-        </div>
-        <label class="dropzone" id="personZone">
-          <input id="person" type="file" accept="image/jpeg,image/png,image/webp">
-          <div class="upload-icon">＋</div>
-          <strong>Upload your photo</strong>
-          <small>JPG, PNG or WebP</small>
-          <img class="preview" id="personPreview" alt="">
-        </label>
-      </div>
-
-      <div class="upload-card">
-        <div class="card-head">
-          <span>02</span>
-          <h2>Saree / garment</h2>
-        </div>
-        <label class="dropzone" id="garmentZone">
-          <input id="garment" type="file" accept="image/jpeg,image/png,image/webp">
-          <div class="upload-icon">＋</div>
-          <strong>Upload garment photo</strong>
-          <small>Flat-lay or on-model photo</small>
-          <img class="preview" id="garmentPreview" alt="">
-        </label>
-      </div>
-    </section>
-
-    <section class="action">
-      <button id="tryBtn" disabled>Try On <span>→</span></button>
-      <p id="status">Upload both images to begin.</p>
-    </section>
-
-    <section id="result" class="result hidden">
-      <div class="result-head">
-        <div>
-          <p class="eyebrow">YOUR RESULT</p>
-          <h2>Virtual try-on</h2>
-        </div>
-        <a id="download" class="download" target="_blank" rel="noopener">Open / Download ↗</a>
-      </div>
-      <div class="result-frame">
-        <img id="resultImage" alt="Virtual try-on result">
-      </div>
-    </section>
-
-    <section class="trust">
-      <div><strong>Simple</strong><span>Two photos to start</span></div>
-      <div><strong>Private</strong><span>Images are sent only for processing</span></div>
-      <div><strong>Fast</strong><span>Results typically arrive in seconds</span></div>
-    </section>
-  </main>
-
-  <footer>
-    <span>© Vasundhara Pro9</span>
-    <span>Virtual Try-On</span>
-  </footer>
-
-<script>
-const person = document.getElementById('person');
-const garment = document.getElementById('garment');
-const personPreview = document.getElementById('personPreview');
-const garmentPreview = document.getElementById('garmentPreview');
-const tryBtn = document.getElementById('tryBtn');
-const statusText = document.getElementById('status');
-const result = document.getElementById('result');
-const resultImage = document.getElementById('resultImage');
-const download = document.getElementById('download');
-
-function preview(input, img) {
-  const file = input.files[0];
-  if (!file) return;
-  img.src = URL.createObjectURL(file);
-  img.classList.add('show');
-  input.parentElement.classList.add('has-image');
-  updateButton();
-}
-
-function updateButton() {
-  tryBtn.disabled = !(person.files[0] && garment.files[0]);
-  if (tryBtn.disabled) statusText.textContent = 'Upload both images to begin.';
-  else statusText.textContent = 'Ready — click Try On.';
-}
-
-person.addEventListener('change', () => preview(person, personPreview));
-garment.addEventListener('change', () => preview(garment, garmentPreview));
-
 tryBtn.addEventListener('click', async () => {
-  if (!person.files[0] || !garment.files[0]) return;
+  if (!person.files[0] || !garment.files[0]) {
+    statusText.textContent = 'Please upload both images.';
+    return;
+  }
 
   tryBtn.disabled = true;
   tryBtn.classList.add('loading');
@@ -124,27 +15,68 @@ tryBtn.addEventListener('click', async () => {
   form.append('garment_image', garment.files[0]);
 
   try {
-    const response = await fetch('/api/openai-tryon', { method: 'POST', body: form });
-    const data = await response.json();
+    console.log('Sending try-on request...');
+
+    const response = await fetch('/api/openai-tryon', {
+      method: 'POST',
+      body: form
+    });
+
+    console.log('API response status:', response.status);
+
+    const text = await response.text();
+    console.log('API response:', text);
+
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error(
+        'Server returned invalid response: ' + text.substring(0, 500)
+      );
+    }
 
     if (!response.ok || !data.success) {
-      throw new Error(data.error || 'Try-on failed.');
+      throw new Error(
+        data.details ||
+        data.error ||
+        'Try-on failed.'
+      );
+    }
+
+    if (!data.image_url) {
+      throw new Error('API returned success but no image.');
     }
 
     resultImage.src = data.image_url;
     download.href = data.image_url;
+
     result.classList.remove('hidden');
-    statusText.textContent = 'Done — your virtual try-on is ready.';
-    result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    statusText.textContent =
+      'Done — your virtual try-on is ready.';
+
+    result.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
+
   } catch (err) {
-    statusText.textContent = err.message;
+
+    console.error('TRY-ON ERROR:', err);
+
+    statusText.textContent =
+      'ERROR: ' + err.message;
+
   } finally {
+
     tryBtn.disabled = false;
     tryBtn.classList.remove('loading');
     tryBtn.innerHTML = 'Try On <span>→</span>';
-    updateButton();
+
+    // IMPORTANT:
+    // Do NOT call updateButton() here.
+    // It was hiding the actual API error.
   }
 });
-</script>
-</body>
-</html>
