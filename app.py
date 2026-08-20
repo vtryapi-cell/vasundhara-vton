@@ -76,10 +76,6 @@ def debug():
 
 # ============================================================
 # GET UPLOADED FILES
-# Supports both:
-# model_image + garment_image
-# and:
-# person + garment
 # ============================================================
 
 def get_uploaded_files():
@@ -109,13 +105,23 @@ def openai_tryon():
     print("OPENAI TRY-ON REQUEST RECEIVED")
     print("========================================")
 
+    # --------------------------------------------------------
+    # CHECK OPENAI KEY
+    # --------------------------------------------------------
+
     if not OPENAI_API_KEY:
         return jsonify({
             "success": False,
             "error": "OPENAI_API_KEY is not configured in Cloud Run."
         }), 500
 
+
+    # --------------------------------------------------------
+    # GET IMAGES
+    # --------------------------------------------------------
+
     model_file, garment_file = get_uploaded_files()
+
 
     if model_file is None:
         return jsonify({
@@ -123,17 +129,38 @@ def openai_tryon():
             "error": "model_image is missing."
         }), 400
 
+
     if garment_file is None:
         return jsonify({
             "success": False,
             "error": "garment_image is missing."
         }), 400
 
-    try:
 
-        # ----------------------------------------------------
-        # READ MODEL IMAGE
-        # ----------------------------------------------------
+    # --------------------------------------------------------
+    # GET STYLE SELECTIONS
+    # --------------------------------------------------------
+
+    hairstyle = request.form.get(
+        "hairstyle",
+        "Natural"
+    ).strip()
+
+    background = request.form.get(
+        "background",
+        "Original"
+    ).strip()
+
+
+    print("SELECTED HAIRSTYLE:", hairstyle)
+    print("SELECTED BACKGROUND:", background)
+
+
+    # --------------------------------------------------------
+    # READ MODEL IMAGE
+    # --------------------------------------------------------
+
+    try:
 
         model_data = model_file.read()
 
@@ -172,18 +199,98 @@ def openai_tryon():
         )
 
 
-        # ----------------------------------------------------
-        # SAREE PROMPT
-        # ----------------------------------------------------
+        # ====================================================
+        # BUILD HAIRSTYLE INSTRUCTION
+        # ====================================================
 
-        prompt = """
-Create a photorealistic Indian fashion virtual try-on.
+        if hairstyle.lower() in [
+            "natural",
+            "original"
+        ]:
 
-IMAGE 1 is the person/model.
-IMAGE 2 is the saree product photograph.
+            hairstyle_instruction = """
+Keep the person's original hairstyle exactly as shown
+in IMAGE 1.
 
-Dress the exact person from IMAGE 1 in the exact
-saree shown in IMAGE 2.
+Do not change the hair.
+"""
+
+        else:
+
+            hairstyle_instruction = f"""
+Change the person's hairstyle to:
+
+{hairstyle}
+
+The requested hairstyle must be clearly visible
+and professionally styled.
+
+IMPORTANT:
+- Keep the same person's face.
+- Keep the same identity.
+- Keep the same skin tone.
+- Keep the same facial features.
+- Do not change the person's age.
+- Do not create a different person.
+- Make the hairstyle realistic.
+- Make the hairstyle naturally fit the person's head.
+- Keep realistic hair texture and lighting.
+"""
+
+
+        # ====================================================
+        # BUILD BACKGROUND INSTRUCTION
+        # ====================================================
+
+        if background.lower() in [
+            "original",
+            "keep photo"
+        ]:
+
+            background_instruction = """
+Keep the original background from IMAGE 1.
+
+Do not replace the background.
+"""
+
+        else:
+
+            background_instruction = f"""
+Replace the original background with:
+
+{background}
+
+The background should look like a professional
+Indian fashion photography environment.
+
+IMPORTANT:
+- Keep the person clearly separated from the background.
+- Keep realistic lighting.
+- Add natural shadows.
+- Make the background photorealistic.
+- Do not distort the person.
+- Do not change the saree.
+"""
+
+
+        # ====================================================
+        # MAIN AI PROMPT
+        # ====================================================
+
+        prompt = f"""
+Create a photorealistic Indian fashion virtual try-on
+for a premium Indian saree e-commerce website.
+
+IMAGE 1 is the PERSON / MODEL.
+
+IMAGE 2 is the SAREE PRODUCT PHOTOGRAPH.
+
+====================================================
+SAREE
+====================================================
+
+Dress the exact person from IMAGE 1 in the exact saree
+shown in IMAGE 2.
 
 The final clothing MUST be a traditional Indian saree.
 
@@ -210,54 +317,110 @@ The saree must:
 - place the pallu naturally over one shoulder
 - look physically believable
 
-Use the EXACT product shown in IMAGE 2.
+====================================================
+PRODUCT ACCURACY
+====================================================
 
-Preserve the saree's:
+Use the EXACT saree product shown in IMAGE 2.
 
-- green color
-- orange color
-- orange border
-- woven patterns
-- decorative motifs
-- pallu
-- border
-- fabric appearance
-- overall design
+Preserve:
 
-Do not invent a different saree.
-Do not change the saree colors.
-Do not replace it with a generic garment.
+- exact saree colors
+- exact border
+- exact woven patterns
+- exact decorative motifs
+- exact pallu
+- exact fabric appearance
+- exact overall design
 
-Keep the same person from IMAGE 1.
+Do NOT invent another saree.
+
+Do NOT replace the product with a generic saree.
+
+Do NOT change the saree colors.
+
+Do NOT change the saree pattern.
+
+====================================================
+PERSON ACCURACY
+====================================================
+
+Keep the SAME person from IMAGE 1.
 
 Preserve:
 
 - face
 - facial features
 - identity
-- hairstyle
 - skin tone
 - body proportions
-- pose
+- natural appearance
 
-Do not create a different person.
+Do NOT create a different person.
 
-Keep the background similar to IMAGE 1.
-Keep the lighting realistic.
+Do NOT change the person's facial identity.
 
-The final image should look like a professional
+====================================================
+HAIRSTYLE
+====================================================
+
+{hairstyle_instruction}
+
+====================================================
+BACKGROUND
+====================================================
+
+{background_instruction}
+
+====================================================
+REALISM
+====================================================
+
+Make the final result look like a professional
 Indian fashion e-commerce photograph.
 
-The person must clearly be wearing the saree
-shown in IMAGE 2.
+Use realistic:
 
-Make the saree draping elegant, natural and realistic.
+- skin texture
+- hair texture
+- fabric texture
+- lighting
+- shadows
+- proportions
+- saree folds
+- pallu placement
+
+The saree must look naturally worn by the person.
+
+The person must remain recognizable.
+
+The final image should be photorealistic,
+high quality and fashion-focused.
+
+Do not add text.
+
+Do not add logos.
+
+Do not add watermarks.
+
+====================================================
+FINAL REQUIREMENT
+====================================================
+
+The final result must show:
+
+1. The SAME person.
+2. The EXACT saree from IMAGE 2.
+3. The selected hairstyle: {hairstyle}.
+4. The selected background: {background}.
+5. Realistic Indian saree draping.
+6. Professional fashion photography quality.
 """
 
 
-        # ----------------------------------------------------
+        # ====================================================
         # FILE INFORMATION
-        # ----------------------------------------------------
+        # ====================================================
 
         model_filename = (
             model_file.filename or "model.jpg"
@@ -276,9 +439,9 @@ Make the saree draping elegant, natural and realistic.
         )
 
 
-        # ----------------------------------------------------
+        # ====================================================
         # OPENAI MULTIPART REQUEST
-        # ----------------------------------------------------
+        # ====================================================
 
         files = [
 
@@ -316,11 +479,13 @@ Make the saree draping elegant, natural and realistic.
         }
 
 
-        # ----------------------------------------------------
+        # ====================================================
         # CALL OPENAI
-        # ----------------------------------------------------
+        # ====================================================
 
         print("🚀 Calling OpenAI image edit API...")
+        print("HAIRSTYLE:", hairstyle)
+        print("BACKGROUND:", background)
 
         start_time = time.time()
 
@@ -333,6 +498,7 @@ Make the saree draping elegant, natural and realistic.
         )
 
         elapsed = time.time() - start_time
+
 
         print(
             "OPENAI STATUS:",
@@ -351,9 +517,9 @@ Make the saree draping elegant, natural and realistic.
         )
 
 
-        # ----------------------------------------------------
+        # ====================================================
         # HANDLE OPENAI ERROR
-        # ----------------------------------------------------
+        # ====================================================
 
         if not response.ok:
 
@@ -362,19 +528,28 @@ Make the saree draping elegant, natural and realistic.
             except Exception:
                 error_json = {}
 
+
             error_message = ""
 
-            if isinstance(error_json.get("error"), dict):
+
+            if isinstance(
+                error_json.get("error"),
+                dict
+            ):
+
                 error_message = (
                     error_json["error"].get("message")
                     or ""
                 )
 
+
             if not error_message:
+
                 error_message = (
                     response.text[:5000]
                     or "OpenAI image generation failed."
                 )
+
 
             return jsonify({
                 "success": False,
@@ -384,12 +559,14 @@ Make the saree draping elegant, natural and realistic.
             }), 502
 
 
-        # ----------------------------------------------------
+        # ====================================================
         # PARSE OPENAI RESPONSE
-        # ----------------------------------------------------
+        # ====================================================
 
         try:
+
             result = response.json()
+
         except Exception as e:
 
             return jsonify({
@@ -399,9 +576,9 @@ Make the saree draping elegant, natural and realistic.
             }), 502
 
 
-        # ----------------------------------------------------
+        # ====================================================
         # CHECK DATA
-        # ----------------------------------------------------
+        # ====================================================
 
         if not result.get("data"):
 
@@ -426,9 +603,9 @@ Make the saree draping elegant, natural and realistic.
             }), 502
 
 
-        # ----------------------------------------------------
+        # ====================================================
         # RETURN IMAGE
-        # ----------------------------------------------------
+        # ====================================================
 
         image_url = (
             "data:image/png;base64,"
@@ -438,16 +615,31 @@ Make the saree draping elegant, natural and realistic.
 
         print("========================================")
         print("OPENAI RESULT READY")
+        print("HAIRSTYLE:", hairstyle)
+        print("BACKGROUND:", background)
         print("========================================")
 
 
         return jsonify({
+
             "success": True,
+
             "image_url": image_url,
+
             "provider": "openai",
-            "model": "gpt-image-2"
+
+            "model": "gpt-image-2",
+
+            "hairstyle": hairstyle,
+
+            "background": background
+
         })
 
+
+    # ========================================================
+    # ERRORS
+    # ========================================================
 
     except requests.exceptions.Timeout:
 
@@ -488,9 +680,6 @@ Make the saree draping elegant, natural and realistic.
 
 # ============================================================
 # MAIN TRY-ON ROUTE
-#
-# This means your existing website can continue
-# using /api/tryon, but it will use OpenAI.
 # ============================================================
 
 @app.post("/api/tryon")
@@ -568,38 +757,61 @@ def fashn_tryon():
 
 
         payload = {
+
             "model_name": "tryon-v1.6",
+
             "inputs": {
+
                 "model_image": model_image,
+
                 "garment_image": garment_image,
+
                 "category": "auto",
+
                 "garment_photo_type": "auto",
+
                 "mode": "balanced",
+
                 "num_samples": 1,
+
                 "output_format": "jpeg"
+
             }
+
         }
 
 
         response = requests.post(
+
             f"{FASHN_URL}/run",
+
             json=payload,
+
             headers={
+
                 "Authorization":
                     f"Bearer {FASHN_API_KEY}",
+
                 "Content-Type":
                     "application/json"
+
             },
+
             timeout=60
+
         )
 
 
         if not response.ok:
 
             return jsonify({
+
                 "success": False,
+
                 "error": "FASHN request failed.",
+
                 "details": response.text[:3000]
+
             }), 502
 
 
@@ -611,9 +823,13 @@ def fashn_tryon():
         if not prediction_id:
 
             return jsonify({
+
                 "success": False,
+
                 "error": "FASHN returned no prediction ID.",
+
                 "response": run_data
+
             }), 502
 
 
@@ -623,12 +839,18 @@ def fashn_tryon():
 
 
             status_response = requests.get(
+
                 f"{FASHN_URL}/status/{prediction_id}",
+
                 headers={
+
                     "Authorization":
                         f"Bearer {FASHN_API_KEY}"
+
                 },
+
                 timeout=30
+
             )
 
 
@@ -654,16 +876,26 @@ def fashn_tryon():
                 if not output:
 
                     return jsonify({
+
                         "success": False,
-                        "error": "FASHN returned no output."
+
+                        "error":
+                            "FASHN returned no output."
+
                     }), 502
 
 
                 return jsonify({
+
                     "success": True,
+
                     "image_url": output[0],
+
                     "provider": "fashn",
-                    "prediction_id": prediction_id
+
+                    "prediction_id":
+                        prediction_id
+
                 })
 
 
@@ -675,16 +907,25 @@ def fashn_tryon():
             ]:
 
                 return jsonify({
+
                     "success": False,
-                    "error": "FASHN try-on failed.",
+
+                    "error":
+                        "FASHN try-on failed.",
+
                     "details":
                         status_data.get("error")
+
                 }), 502
 
 
         return jsonify({
+
             "success": False,
-            "error": "FASHN prediction timed out."
+
+            "error":
+                "FASHN prediction timed out."
+
         }), 504
 
 
@@ -696,8 +937,11 @@ def fashn_tryon():
         )
 
         return jsonify({
+
             "success": False,
+
             "error": str(e)
+
         }), 500
 
 
@@ -709,9 +953,14 @@ def fashn_tryon():
 def not_found(error):
 
     return jsonify({
+
         "success": False,
+
         "error": "Flask 404",
-        "requested_path": request.path
+
+        "requested_path":
+            request.path
+
     }), 404
 
 
