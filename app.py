@@ -718,7 +718,7 @@ PRIORITY ORDER:
         data = {
 
             "model":
-                "gpt-image-2",
+                "gpt-image-1-mini",
 
             "prompt":
                 prompt,
@@ -727,7 +727,7 @@ PRIORITY ORDER:
                 "1024x1536",
 
             "quality":
-                "medium"
+                "low"
 
         }
 
