@@ -1,729 +1,1168 @@
 ```html
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>Vasundhara Pro9 — Virtual Try-On</title>
+<title>Vasundhara Pro | AI Virtual Try-On</title>
 
-  <meta
-    name="description"
-    content="See how a saree or garment looks on you with Vasundhara Pro9 Virtual Try-On."
-  >
+<style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
 
-  <link rel="stylesheet" href="/static/style.css">
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #241923;
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at 10% 0%, #ffeaf3 0%, transparent 32%),
+        radial-gradient(circle at 90% 20%, #eee5ff 0%, transparent 32%),
+        linear-gradient(135deg, #fffafd, #f8f5ff);
+}
+
+/* HEADER */
+
+header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 6%;
+    background: rgba(255,255,255,.88);
+    backdrop-filter: blur(18px);
+    border-bottom: 1px solid rgba(120,70,100,.12);
+}
+
+.logo {
+    font-size: 27px;
+    font-weight: 900;
+    letter-spacing: -1px;
+}
+
+.logo span {
+    background: linear-gradient(90deg,#a33d69,#7040a3);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.tagline {
+    color: #88727f;
+    font-size: 12px;
+    margin-top: 3px;
+}
+
+/* HERO */
+
+.hero {
+    text-align: center;
+    padding: 55px 20px 35px;
+}
+
+.hero h1 {
+    font-size: clamp(38px,6vw,68px);
+    line-height: 1;
+    letter-spacing: -3px;
+    background: linear-gradient(90deg,#96355f,#7040a2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero p {
+    max-width: 700px;
+    margin: 20px auto 0;
+    color: #796875;
+    line-height: 1.6;
+    font-size: 16px;
+}
+
+/* CONTAINER */
+
+.container {
+    width: min(1180px,92%);
+    margin: auto;
+    padding-bottom: 70px;
+}
+
+.card {
+    background: rgba(255,255,255,.92);
+    border: 1px solid rgba(140,90,120,.14);
+    border-radius: 30px;
+    padding: 30px;
+    box-shadow: 0 25px 70px rgba(70,40,70,.11);
+}
+
+.section-title {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 18px;
+}
+
+/* UPLOAD */
+
+.upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+}
+
+.upload-box {
+    min-height: 310px;
+    padding: 25px;
+    border: 2px dashed #d9b8cb;
+    border-radius: 24px;
+    background: #fffafd;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.upload-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.upload-box h3 {
+    margin-bottom: 8px;
+}
+
+.upload-box p {
+    color: #887581;
+    font-size: 13px;
+    margin-bottom: 18px;
+}
+
+/* BUTTONS */
+
+.button-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.action-btn {
+    border: none;
+    padding: 13px 19px;
+    border-radius: 14px;
+    font-weight: 750;
+    cursor: pointer;
+    background: #241923;
+    color: white;
+    transition: .2s;
+}
+
+.action-btn:hover {
+    transform: translateY(-2px);
+}
+
+.action-btn.secondary {
+    background: #f3e7ee;
+    color: #6f3151;
+}
+
+input[type=file] {
+    display: none;
+}
+
+.preview {
+    display: none;
+    width: 100%;
+    max-width: 260px;
+    max-height: 220px;
+    margin-top: 18px;
+    border-radius: 18px;
+    object-fit: contain;
+    box-shadow: 0 8px 25px rgba(0,0,0,.10);
+}
+
+/* CAMERA */
+
+.camera-area {
+    display: none;
+    width: 100%;
+    margin-top: 18px;
+}
+
+#cameraVideo {
+    width: 100%;
+    max-height: 350px;
+    border-radius: 20px;
+    background: #111;
+    object-fit: cover;
+}
+
+.camera-controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
+/* OPTIONS */
+
+.options {
+    margin-top: 35px;
+}
+
+.option-grid {
+    display: grid;
+    grid-template-columns: repeat(5,1fr);
+    gap: 14px;
+}
+
+.option {
+    border: 2px solid #eadde5;
+    background: white;
+    border-radius: 18px;
+    padding: 13px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: .2s;
+}
+
+.option:hover {
+    transform: translateY(-3px);
+    border-color: #c6789a;
+}
+
+.option.active {
+    border-color: #9d3b68;
+    background: #fff1f6;
+    box-shadow: 0 8px 22px rgba(157,59,104,.13);
+}
+
+.option-image {
+    width: 100%;
+    height: 110px;
+    border-radius: 13px;
+    object-fit: cover;
+    background:
+        linear-gradient(135deg,#f5e6ee,#eee7f8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 38px;
+}
+
+.option-name {
+    font-size: 13px;
+    font-weight: 800;
+    margin-top: 9px;
+}
+
+.option small {
+    display: block;
+    color: #8c7884;
+    font-size: 10px;
+    margin-top: 3px;
+}
+
+.selected-info {
+    margin-top: 12px;
+    color: #806c78;
+    font-size: 13px;
+}
+
+/* TRY BUTTON */
+
+.try-section {
+    text-align: center;
+    margin-top: 38px;
+}
+
+.try-btn {
+    border: none;
+    padding: 18px 58px;
+    border-radius: 999px;
+    font-size: 18px;
+    font-weight: 900;
+    color: white;
+    cursor: pointer;
+    background: linear-gradient(90deg,#9e3b68,#713da0);
+    box-shadow: 0 16px 38px rgba(113,61,160,.27);
+    transition: .25s;
+}
+
+.try-btn:hover {
+    transform: translateY(-3px);
+}
+
+.try-btn:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.status {
+    min-height: 25px;
+    margin-top: 16px;
+    color: #765f6d;
+}
+
+/* RESULT */
+
+.result-section {
+    display: none;
+    margin-top: 40px;
+}
+
+.result-box {
+    text-align: center;
+    padding: 25px;
+    background: #fff;
+    border-radius: 25px;
+}
+
+.result-box img {
+    max-width: 100%;
+    max-height: 800px;
+    border-radius: 20px;
+    box-shadow: 0 18px 50px rgba(40,20,40,.16);
+}
+
+.download-btn {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 13px 25px;
+    border-radius: 999px;
+    background: #241923;
+    color: white;
+    text-decoration: none;
+    font-weight: 750;
+}
+
+/* FOOTER */
+
+footer {
+    text-align: center;
+    padding: 30px;
+    color: #8b7885;
+    font-size: 13px;
+}
+
+/* MOBILE */
+
+@media(max-width:850px) {
+
+    .upload-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .option-grid {
+        grid-template-columns: repeat(2,1fr);
+    }
+
+    .card {
+        padding: 20px;
+    }
+
+    header {
+        padding: 16px 5%;
+    }
+
+    .tagline {
+        display: none;
+    }
+}
+</style>
 </head>
 
 <body>
 
-  <!-- ============================================================
-       HEADER
-  ============================================================ -->
+<header>
 
-  <header class="nav">
-    <div class="brand">
-      Vasundhara <span>Pro9</span>
+    <div>
+        <div class="logo">
+            VASUNDHARA <span>PRO</span>
+        </div>
+
+        <div class="tagline">
+            AI Fashion Virtual Try-On
+        </div>
     </div>
 
-    <div class="nav-pill">
-      AI Virtual Try-On
+    <div style="font-size:13px;color:#806b78;">
+        ✨ Virtual Styling
     </div>
-  </header>
+
+</header>
 
 
-  <!-- ============================================================
-       MAIN
-  ============================================================ -->
+<section class="hero">
 
-  <main>
+    <h1>Try Your Saree Virtually</h1>
 
-    <!-- HERO -->
+    <p>
+        Upload your photo or take a live photo,
+        choose your hairstyle and background,
+        and create your virtual saree look.
+    </p>
 
-    <section class="hero">
-
-      <p class="eyebrow">
-        VASUNDHARA PRO9
-      </p>
-
-      <h1>
-        Try it on.<br>
-        <em>See yourself.</em>
-      </h1>
-
-      <p class="lead">
-        Upload your photo and a saree or garment.
-        Our AI creates a realistic virtual try-on preview in seconds.
-      </p>
-
-      <a class="hero-link" href="#tryon">
-        Start your try-on <span>↓</span>
-      </a>
-
-    </section>
+</section>
 
 
-    <!-- ============================================================
-         UPLOAD AREA
-    ============================================================ -->
+<main class="container">
 
-    <section id="tryon" class="workspace">
+<div class="card">
 
-      <!-- PERSON -->
+    <!-- PHOTO UPLOAD -->
 
-      <div class="upload-card">
+    <div class="section-title">
+        1. Your Photo
+    </div>
 
-        <div class="card-head">
-          <span>01</span>
-          <h2>Your photo</h2>
-        </div>
+    <div class="upload-grid">
 
-        <label class="dropzone" id="personZone">
+        <div class="upload-box">
 
-          <input
-            id="person"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-          >
+            <div class="upload-icon">📸</div>
 
-          <div class="upload-icon">
-            ＋
-          </div>
+            <h3>Take a Live Photo</h3>
 
-          <strong>
-            Upload your photo
-          </strong>
+            <p>
+                Use your phone or computer camera.
+            </p>
 
-          <small>
-            JPG, PNG or WebP
-          </small>
+            <div class="button-row">
 
-          <img
-            class="preview"
-            id="personPreview"
-            alt="Your photo preview"
-          >
+                <button
+                    class="action-btn"
+                    id="cameraButton"
+                    type="button">
+                    📷 Open Camera
+                </button>
 
-        </label>
+                <label
+                    class="action-btn secondary"
+                    for="photoInput">
+                    📁 Upload Photo
+                </label>
 
-      </div>
+            </div>
 
+            <input
+                id="photoInput"
+                type="file"
+                accept="image/*"
+            >
 
-      <!-- GARMENT -->
+            <div
+                id="cameraArea"
+                class="camera-area">
 
-      <div class="upload-card">
+                <video
+                    id="cameraVideo"
+                    autoplay
+                    playsinline>
+                </video>
 
-        <div class="card-head">
-          <span>02</span>
-          <h2>Saree / garment</h2>
-        </div>
+                <div class="camera-controls">
 
-        <label class="dropzone" id="garmentZone">
+                    <button
+                        class="action-btn"
+                        id="captureButton"
+                        type="button">
+                        📸 Capture
+                    </button>
 
-          <input
-            id="garment"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-          >
+                    <button
+                        class="action-btn secondary"
+                        id="closeCameraButton"
+                        type="button">
+                        Close
+                    </button>
 
-          <div class="upload-icon">
-            ＋
-          </div>
+                </div>
 
-          <strong>
-            Upload garment photo
-          </strong>
+            </div>
 
-          <small>
-            Flat-lay or on-model photo
-          </small>
-
-          <img
-            class="preview"
-            id="garmentPreview"
-            alt="Garment preview"
-          >
-
-        </label>
-
-      </div>
-
-    </section>
-
-
-    <!-- ============================================================
-         TRY ON BUTTON
-    ============================================================ -->
-
-    <section class="action">
-
-      <button
-        id="tryBtn"
-        type="button"
-        disabled
-      >
-        Try On <span>→</span>
-      </button>
-
-      <p id="status">
-        Upload both images to begin.
-      </p>
-
-    </section>
-
-
-    <!-- ============================================================
-         RESULT
-    ============================================================ -->
-
-    <section
-      id="result"
-      class="result hidden"
-    >
-
-      <div class="result-head">
-
-        <div>
-
-          <p class="eyebrow">
-            YOUR RESULT
-          </p>
-
-          <h2>
-            Virtual try-on
-          </h2>
+            <img
+                id="personPreview"
+                class="preview"
+                alt="Person preview"
+            >
 
         </div>
 
-        <a
-          id="download"
-          class="download"
-          target="_blank"
-          rel="noopener"
-        >
-          Open / Download ↗
-        </a>
 
-      </div>
+        <!-- SAREE -->
 
+        <div class="upload-box">
 
-      <div class="result-frame">
+            <div class="upload-icon">🥻</div>
 
-        <img
-          id="resultImage"
-          alt="Virtual try-on result"
-        >
+            <h3>Upload Saree</h3>
 
-      </div>
+            <p>
+                Upload the saree/product image.
+            </p>
 
-    </section>
+            <label
+                class="action-btn"
+                for="sareeInput">
+                🥻 Choose Saree
+            </label>
 
+            <input
+                id="sareeInput"
+                type="file"
+                accept="image/*"
+            >
 
-    <!-- ============================================================
-         TRUST
-    ============================================================ -->
+            <img
+                id="sareePreview"
+                class="preview"
+                alt="Saree preview"
+            >
 
-    <section class="trust">
+        </div>
 
-      <div>
-        <strong>Simple</strong>
-        <span>Two photos to start</span>
-      </div>
-
-      <div>
-        <strong>Private</strong>
-        <span>Images are sent only for processing</span>
-      </div>
-
-      <div>
-        <strong>Fast</strong>
-        <span>Results typically arrive in seconds</span>
-      </div>
-
-    </section>
-
-  </main>
+    </div>
 
 
-  <!-- ============================================================
-       FOOTER
-  ============================================================ -->
+    <!-- HAIRSTYLE -->
 
-  <footer>
+    <div class="options">
 
-    <span>
-      © Vasundhara Pro9
-    </span>
+        <div class="section-title">
+            2. Choose Hairstyle
+        </div>
 
-    <span>
-      Virtual Try-On
-    </span>
+        <div class="option-grid">
 
-  </footer>
+            <div class="option active" data-hair="Natural">
+                <div class="option-image">👩🏻</div>
+                <div class="option-name">Natural</div>
+                <small>Original hair</small>
+            </div>
 
+            <div class="option" data-hair="Long Open">
+                <div class="option-image">💇🏻‍♀️</div>
+                <div class="option-name">Long Open</div>
+                <small>Elegant</small>
+            </div>
 
-  <!-- ============================================================
-       JAVASCRIPT
-  ============================================================ -->
+            <div class="option" data-hair="Straight">
+                <div class="option-image">👩🏻</div>
+                <div class="option-name">Straight</div>
+                <small>Sleek style</small>
+            </div>
 
-  <script>
+            <div class="option" data-hair="Curly">
+                <div class="option-image">👩🏻‍🦱</div>
+                <div class="option-name">Curly</div>
+                <small>Soft curls</small>
+            </div>
 
-    /*
-     * ============================================================
-     * ELEMENTS
-     * ============================================================
-     */
+            <div class="option" data-hair="Traditional Bun">
+                <div class="option-image">👩🏻‍🦰</div>
+                <div class="option-name">Bun</div>
+                <small>Traditional</small>
+            </div>
 
-    const person =
-      document.getElementById("person");
+            <div class="option" data-hair="Low Bun">
+                <div class="option-image">👩🏻</div>
+                <div class="option-name">Low Bun</div>
+                <small>Classic</small>
+            </div>
 
-    const garment =
-      document.getElementById("garment");
+            <div class="option" data-hair="Braid">
+                <div class="option-image">👩🏻‍🦱</div>
+                <div class="option-name">Braid</div>
+                <small>Indian style</small>
+            </div>
 
-    const personPreview =
-      document.getElementById("personPreview");
+            <div class="option" data-hair="Bridal">
+                <div class="option-image">👰🏻</div>
+                <div class="option-name">Bridal</div>
+                <small>Wedding</small>
+            </div>
 
-    const garmentPreview =
-      document.getElementById("garmentPreview");
+            <div class="option" data-hair="Half Up">
+                <div class="option-image">👩🏻</div>
+                <div class="option-name">Half Up</div>
+                <small>Modern</small>
+            </div>
 
-    const tryBtn =
-      document.getElementById("tryBtn");
+            <div class="option" data-hair="Wavy">
+                <div class="option-image">👩🏻‍🦱</div>
+                <div class="option-name">Wavy</div>
+                <small>Natural waves</small>
+            </div>
 
-    const statusText =
-      document.getElementById("status");
+        </div>
 
-    const result =
-      document.getElementById("result");
+        <div class="selected-info">
+            Hairstyle:
+            <strong id="hairValue">Natural</strong>
+        </div>
 
-    const resultImage =
-      document.getElementById("resultImage");
-
-    const download =
-      document.getElementById("download");
-
-
-    /*
-     * ============================================================
-     * IMAGE PREVIEW
-     * ============================================================
-     */
-
-    function preview(input, img) {
-
-      const file = input.files[0];
-
-      if (!file) {
-        return;
-      }
-
-      /*
-       * Basic image validation
-       */
-
-      if (!file.type.startsWith("image/")) {
-
-        statusText.textContent =
-          "Please select an image file.";
-
-        input.value = "";
-
-        updateButton();
-
-        return;
-      }
+    </div>
 
 
-      /*
-       * Preview image
-       */
+    <!-- BACKGROUND -->
 
-      img.src =
+    <div class="options">
+
+        <div class="section-title">
+            3. Choose Background
+        </div>
+
+        <div class="option-grid">
+
+            <div class="option active" data-background="Original">
+                <div class="option-image">🏠</div>
+                <div class="option-name">Original</div>
+                <small>Keep photo</small>
+            </div>
+
+            <div class="option" data-background="White Studio">
+                <div class="option-image">📸</div>
+                <div class="option-name">White Studio</div>
+                <small>Clean</small>
+            </div>
+
+            <div class="option" data-background="Luxury Studio">
+                <div class="option-image">✨</div>
+                <div class="option-name">Luxury</div>
+                <small>Premium</small>
+            </div>
+
+            <div class="option" data-background="Indian Palace">
+                <div class="option-image">🏛️</div>
+                <div class="option-name">Palace</div>
+                <small>Royal</small>
+            </div>
+
+            <div class="option" data-background="Wedding Stage">
+                <div class="option-image">💐</div>
+                <div class="option-name">Wedding</div>
+                <small>Bridal</small>
+            </div>
+
+            <div class="option" data-background="Temple">
+                <div class="option-image">🛕</div>
+                <div class="option-name">Temple</div>
+                <small>Traditional</small>
+            </div>
+
+            <div class="option" data-background="Garden">
+                <div class="option-image">🌸</div>
+                <div class="option-name">Garden</div>
+                <small>Fresh</small>
+            </div>
+
+            <div class="option" data-background="Festive">
+                <div class="option-image">🪔</div>
+                <div class="option-name">Festive</div>
+                <small>Indian</small>
+            </div>
+
+            <div class="option" data-background="Fashion Studio">
+                <div class="option-image">👗</div>
+                <div class="option-name">Fashion</div>
+                <small>Editorial</small>
+            </div>
+
+            <div class="option" data-background="Outdoor">
+                <div class="option-image">🌿</div>
+                <div class="option-name">Outdoor</div>
+                <small>Natural</small>
+            </div>
+
+        </div>
+
+        <div class="selected-info">
+            Background:
+            <strong id="backgroundValue">Original</strong>
+        </div>
+
+    </div>
+
+
+    <!-- TRY ON -->
+
+    <div class="try-section">
+
+        <button
+            id="tryButton"
+            class="try-btn"
+            type="button">
+
+            ✨ TRY ON SAREE
+
+        </button>
+
+        <div
+            id="status"
+            class="status">
+        </div>
+
+    </div>
+
+
+    <!-- RESULT -->
+
+    <div
+        id="resultSection"
+        class="result-section">
+
+        <div class="section-title">
+            4. Your Virtual Try-On
+        </div>
+
+        <div class="result-box">
+
+            <img
+                id="resultImage"
+                alt="Virtual try-on result"
+            >
+
+            <br>
+
+            <a
+                id="downloadButton"
+                class="download-btn"
+                download="vasundhara-tryon.png">
+
+                ⬇ Download Result
+
+            </a>
+
+        </div>
+
+    </div>
+
+</div>
+
+</main>
+
+
+<footer>
+    © 2026 Vasundhara Pro · AI Fashion Virtual Try-On
+</footer>
+
+
+<script>
+
+let selectedHair = "Natural";
+let selectedBackground = "Original";
+
+let cameraStream = null;
+let personFile = null;
+
+
+/* PHOTO PREVIEW */
+
+function showPersonPreview(file) {
+
+    personFile = file;
+
+    const preview =
+        document.getElementById("personPreview");
+
+    preview.src =
         URL.createObjectURL(file);
 
-      img.classList.add("show");
-
-      input.parentElement.classList.add("has-image");
-
-
-      /*
-       * Update button
-       */
-
-      updateButton();
-
-    }
+    preview.style.display = "block";
+}
 
 
-    /*
-     * ============================================================
-     * BUTTON STATE
-     * ============================================================
-     */
+/* UPLOAD PHOTO */
 
-    function updateButton() {
+document
+    .getElementById("photoInput")
+    .addEventListener("change", function() {
 
-      const hasPerson =
-        !!person.files[0];
-
-      const hasGarment =
-        !!garment.files[0];
-
-
-      tryBtn.disabled =
-        !(hasPerson && hasGarment);
-
-
-      /*
-       * Only show the normal ready message
-       * when the button is not currently processing.
-       */
-
-      if (!tryBtn.classList.contains("loading")) {
-
-        if (!hasPerson || !hasGarment) {
-
-          statusText.textContent =
-            "Upload both images to begin.";
-
-        } else {
-
-          statusText.textContent =
-            "Ready — click Try On.";
-
+        if (this.files.length) {
+            showPersonPreview(this.files[0]);
         }
 
-      }
-
-    }
+    });
 
 
-    /*
-     * ============================================================
-     * FILE INPUT EVENTS
-     * ============================================================
-     */
+/* SAREE PREVIEW */
 
-    person.addEventListener(
-      "change",
-      function () {
+document
+    .getElementById("sareeInput")
+    .addEventListener("change", function() {
 
-        preview(
-          person,
-          personPreview
-        );
+        if (!this.files.length) return;
 
-      }
-    );
+        const preview =
+            document.getElementById("sareePreview");
 
+        preview.src =
+            URL.createObjectURL(this.files[0]);
 
-    garment.addEventListener(
-      "change",
-      function () {
+        preview.style.display = "block";
 
-        preview(
-          garment,
-          garmentPreview
-        );
-
-      }
-    );
+    });
 
 
-    /*
-     * ============================================================
-     * TRY ON
-     * ============================================================
-     */
+/* CAMERA OPEN */
 
-    tryBtn.addEventListener(
-      "click",
-      async function () {
-
-        /*
-         * Make sure both files exist.
-         */
-
-        if (
-          !person.files[0] ||
-          !garment.files[0]
-        ) {
-
-          statusText.textContent =
-            "Please upload both images.";
-
-          return;
-
-        }
-
-
-        /*
-         * Disable button while processing.
-         */
-
-        tryBtn.disabled = true;
-
-        tryBtn.classList.add("loading");
-
-        tryBtn.innerHTML =
-          "Creating your try-on <span>…</span>";
-
-
-        statusText.textContent =
-          "AI is processing your images. Please wait.";
-
-
-        /*
-         * Hide previous result.
-         */
-
-        result.classList.add("hidden");
-
-
-        /*
-         * ========================================================
-         * CREATE MULTIPART FORM
-         * ========================================================
-         */
-
-        const form =
-          new FormData();
-
-
-        form.append(
-          "model_image",
-          person.files[0]
-        );
-
-
-        form.append(
-          "garment_image",
-          garment.files[0]
-        );
-
-
-        /*
-         * ========================================================
-         * CALL BACKEND
-         * ========================================================
-         *
-         * IMPORTANT:
-         * This is your Cloud Run Flask endpoint.
-         */
+document
+    .getElementById("cameraButton")
+    .addEventListener("click", async function() {
 
         try {
 
-          console.log(
-            "================================"
-          );
+            cameraStream =
+                await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: "user"
+                    },
+                    audio: false
+                });
 
-          console.log(
-            "Sending try-on request..."
-          );
+            const video =
+                document.getElementById("cameraVideo");
 
-          console.log(
-            "Person:",
-            person.files[0].name,
-            person.files[0].type,
-            person.files[0].size
-          );
+            video.srcObject =
+                cameraStream;
 
-          console.log(
-            "Garment:",
-            garment.files[0].name,
-            garment.files[0].type,
-            garment.files[0].size
-          );
-
-
-          const response =
-            await fetch(
-              "/api/openai-tryon",
-              {
-                method: "POST",
-                body: form
-              }
-            );
-
-
-          console.log(
-            "API response status:",
-            response.status
-          );
-
-
-          /*
-           * Read response as text first.
-           *
-           * This is important because if Flask/Cloud Run
-           * returns HTML instead of JSON, we can see it.
-           */
-
-          const text =
-            await response.text();
-
-
-          console.log(
-            "API response:",
-            text
-          );
-
-
-          /*
-           * ======================================================
-           * PARSE JSON
-           * ======================================================
-           */
-
-          let data;
-
-
-          try {
-
-            data =
-              JSON.parse(text);
-
-          } catch (jsonError) {
-
-            throw new Error(
-              "Server returned invalid response: " +
-              text.substring(0, 1000)
-            );
-
-          }
-
-
-          /*
-           * ======================================================
-           * API ERROR
-           * ======================================================
-           */
-
-          if (
-            !response.ok ||
-            !data.success
-          ) {
-
-            throw new Error(
-              data.details ||
-              data.error ||
-              "Try-on failed."
-            );
-
-          }
-
-
-          /*
-           * ======================================================
-           * CHECK IMAGE
-           * ======================================================
-           */
-
-          if (!data.image_url) {
-
-            throw new Error(
-              "API returned success but no image."
-            );
-
-          }
-
-
-          /*
-           * ======================================================
-           * DISPLAY RESULT
-           * ======================================================
-           */
-
-          resultImage.src =
-            data.image_url;
-
-
-          download.href =
-            data.image_url;
-
-
-          result.classList.remove(
-            "hidden"
-          );
-
-
-          statusText.textContent =
-            "Done — your virtual try-on is ready.";
-
-
-          /*
-           * Scroll to result.
-           */
-
-          result.scrollIntoView({
-            behavior: "smooth",
-            block: "start"
-          });
-
-
-          console.log(
-            "TRY-ON SUCCESS"
-          );
-
-
-        } catch (err) {
-
-          /*
-           * ======================================================
-           * IMPORTANT ERROR DISPLAY
-           * ======================================================
-           *
-           * We intentionally do NOT call updateButton()
-           * here because it would hide the actual error.
-           */
-
-          console.error(
-            "TRY-ON ERROR:",
-            err
-          );
-
-
-          statusText.textContent =
-            "ERROR: " + err.message;
-
-
-        } finally {
-
-          /*
-           * Re-enable button.
-           */
-
-          tryBtn.disabled =
-            false;
-
-          tryBtn.classList.remove(
-            "loading"
-          );
-
-          tryBtn.innerHTML =
-            "Try On <span>→</span>";
-
-
-          /*
-           * DO NOT call updateButton() here.
-           *
-           * Calling it here was hiding the real API error.
-           */
+            document
+                .getElementById("cameraArea")
+                .style.display = "block";
 
         }
 
-      }
-    );
+        catch(error) {
+
+            alert(
+                "Camera access was not available. Please allow camera permission or use Upload Photo."
+            );
+
+            console.error(error);
+
+        }
+
+    });
 
 
-    /*
-     * ============================================================
-     * INITIAL STATE
-     * ============================================================
-     */
+/* CAPTURE */
 
-    updateButton();
+document
+    .getElementById("captureButton")
+    .addEventListener("click", function() {
 
-  </script>
+        const video =
+            document.getElementById("cameraVideo");
+
+        if (!video.videoWidth) {
+            alert("Camera is not ready yet.");
+            return;
+        }
+
+        const canvas =
+            document.createElement("canvas");
+
+        canvas.width =
+            video.videoWidth;
+
+        canvas.height =
+            video.videoHeight;
+
+        const ctx =
+            canvas.getContext("2d");
+
+        ctx.drawImage(
+            video,
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+        canvas.toBlob(function(blob) {
+
+            personFile =
+                new File(
+                    [blob],
+                    "live-photo.jpg",
+                    {
+                        type: "image/jpeg"
+                    }
+                );
+
+            showPersonPreview(personFile);
+
+            closeCamera();
+
+        }, "image/jpeg", 0.95);
+
+    });
+
+
+/* CLOSE CAMERA */
+
+function closeCamera() {
+
+    if (cameraStream) {
+
+        cameraStream
+            .getTracks()
+            .forEach(track => track.stop());
+
+        cameraStream = null;
+
+    }
+
+    document
+        .getElementById("cameraArea")
+        .style.display = "none";
+
+}
+
+
+document
+    .getElementById("closeCameraButton")
+    .addEventListener("click", closeCamera);
+
+
+/* HAIRSTYLE */
+
+document
+    .querySelectorAll("[data-hair]")
+    .forEach(function(option) {
+
+        option.addEventListener("click", function() {
+
+            document
+                .querySelectorAll("[data-hair]")
+                .forEach(function(item) {
+                    item.classList.remove("active");
+                });
+
+            this.classList.add("active");
+
+            selectedHair =
+                this.dataset.hair;
+
+            document
+                .getElementById("hairValue")
+                .textContent =
+                selectedHair;
+
+        });
+
+    });
+
+
+/* BACKGROUND */
+
+document
+    .querySelectorAll("[data-background]")
+    .forEach(function(option) {
+
+        option.addEventListener("click", function() {
+
+            document
+                .querySelectorAll("[data-background]")
+                .forEach(function(item) {
+                    item.classList.remove("active");
+                });
+
+            this.classList.add("active");
+
+            selectedBackground =
+                this.dataset.background;
+
+            document
+                .getElementById("backgroundValue")
+                .textContent =
+                selectedBackground;
+
+        });
+
+    });
+
+
+/* TRY ON */
+
+document
+    .getElementById("tryButton")
+    .addEventListener("click", async function() {
+
+        const button = this;
+
+        const sareeInput =
+            document.getElementById("sareeInput");
+
+        const sareeFile =
+            sareeInput.files[0];
+
+
+        if (!personFile) {
+
+            document
+                .getElementById("status")
+                .textContent =
+                "⚠ Please upload a photo or take a live photo.";
+
+            return;
+
+        }
+
+
+        if (!sareeFile) {
+
+            document
+                .getElementById("status")
+                .textContent =
+                "⚠ Please upload a saree image.";
+
+            return;
+
+        }
+
+
+        button.disabled = true;
+
+
+        const status =
+            document.getElementById("status");
+
+        status.textContent =
+            "✨ Creating your virtual try-on...";
+
+
+        document
+            .getElementById("resultSection")
+            .style.display = "none";
+
+
+        const formData =
+            new FormData();
+
+
+        formData.append(
+            "model_image",
+            personFile
+        );
+
+        formData.append(
+            "garment_image",
+            sareeFile
+        );
+
+
+        /*
+         * These are now sent to Flask.
+         *
+         * The current app.py does not yet use
+         * these values in the AI prompt.
+         */
+
+        formData.append(
+            "hairstyle",
+            selectedHair
+        );
+
+        formData.append(
+            "background",
+            selectedBackground
+        );
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/tryon",
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!response.ok ||
+                !data.success) {
+
+                throw new Error(
+                    data.error ||
+                    data.details ||
+                    "Virtual try-on failed."
+                );
+
+            }
+
+
+            if (!data.image_url) {
+
+                throw new Error(
+                    "Server returned no image."
+                );
+
+            }
+
+
+            const resultImage =
+                document
+                    .getElementById("resultImage");
+
+
+            resultImage.src =
+                data.image_url;
+
+
+            document
+                .getElementById("downloadButton")
+                .href =
+                data.image_url;
+
+
+            document
+                .getElementById("resultSection")
+                .style.display =
+                "block";
+
+
+            status.textContent =
+                "✅ Your virtual try-on is ready!";
+
+
+            document
+                .getElementById("resultSection")
+                .scrollIntoView({
+                    behavior: "smooth"
+                });
+
+        }
+
+        catch(error) {
+
+            console.error(error);
+
+            status.textContent =
+                "❌ " + error.message;
+
+        }
+
+        finally {
+
+            button.disabled = false;
+
+        }
+
+    });
+
+</script>
 
 </body>
 </html>
