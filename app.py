@@ -7,7 +7,8 @@ from flask import Flask, jsonify, request, render_template
 
 
 # ============================================================
-# VASUNDHARA VTON - FASHN TRY-ON MAX
+# VASUNDHARA VTON
+# FASHN TRY-ON MAX
 # ============================================================
 
 app = Flask(__name__)
@@ -18,7 +19,7 @@ FASHN_URL = "https://api.fashn.ai/v1"
 
 
 print("========================================")
-print("VASUNDHARA VTON SERVER STARTING")
+print("VASUNDHARA VTON SERVER")
 print("========================================")
 print("APP FILE:", __file__)
 print("FASHN KEY PRESENT:", bool(FASHN_API_KEY))
@@ -27,13 +28,14 @@ print("========================================")
 
 
 # ============================================================
-# HOME
+# HOME PAGE
 # ============================================================
 
 @app.route("/", methods=["GET"])
 def home():
 
     try:
+
         return render_template("index.html")
 
     except Exception as e:
@@ -41,6 +43,7 @@ def home():
         print("HOME ERROR:", repr(e))
 
         return """
+        <!DOCTYPE html>
         <html>
         <head>
             <title>Vasundhara VTON</title>
@@ -60,7 +63,7 @@ def home():
 
 
 # ============================================================
-# HEALTH
+# HEALTH CHECK
 # ============================================================
 
 @app.route("/health", methods=["GET"])
@@ -99,25 +102,28 @@ def debug():
         "app_file":
             __file__,
 
-        "fashn_key_present":
-            bool(FASHN_API_KEY),
-
         "provider":
-            "fashn",
+            "FASHN",
 
         "model":
             "tryon-max",
 
+        "fashn_key_present":
+            bool(FASHN_API_KEY),
+
         "routes": [
+
             str(rule)
+
             for rule in app.url_map.iter_rules()
+
         ]
 
     })
 
 
 # ============================================================
-# GET UPLOADED IMAGES
+# GET MODEL + SAREE FILES
 # ============================================================
 
 def get_uploaded_files():
@@ -146,7 +152,7 @@ def get_uploaded_files():
 
 
 # ============================================================
-# CONVERT FILE TO DATA URI
+# FILE -> DATA URI
 # ============================================================
 
 def file_to_data_uri(file_object):
@@ -154,7 +160,10 @@ def file_to_data_uri(file_object):
     data = file_object.read()
 
     if not data:
-        raise ValueError("Uploaded image is empty.")
+
+        raise ValueError(
+            "Uploaded image is empty."
+        )
 
     content_type = (
         file_object.content_type
@@ -166,23 +175,26 @@ def file_to_data_uri(file_object):
     ).decode("utf-8")
 
     return (
-        f"data:{content_type};base64,{encoded}"
+        "data:"
+        + content_type
+        + ";base64,"
+        + encoded
     )
 
 
 # ============================================================
-# FASHN TRY-ON MAX
+# MAIN VTON
 # ============================================================
 
 @app.route(
-    "/api/fashn-tryon",
+    "/api/tryon",
     methods=["POST"]
 )
-def fashn_tryon():
+def tryon():
 
     print("")
     print("========================================")
-    print("FASHN TRY-ON MAX REQUEST")
+    print("NEW VTON REQUEST")
     print("========================================")
 
 
@@ -203,7 +215,7 @@ def fashn_tryon():
 
 
     # --------------------------------------------------------
-    # FILES
+    # GET FILES
     # --------------------------------------------------------
 
     model_file, garment_file = (
@@ -238,7 +250,22 @@ def fashn_tryon():
     try:
 
         # ----------------------------------------------------
-        # READ IMAGES
+        # FILE INFORMATION
+        # ----------------------------------------------------
+
+        print(
+            "MODEL FILE:",
+            model_file.filename
+        )
+
+        print(
+            "SAREE FILE:",
+            garment_file.filename
+        )
+
+
+        # ----------------------------------------------------
+        # CONVERT IMAGES
         # ----------------------------------------------------
 
         model_image = file_to_data_uri(
@@ -250,19 +277,8 @@ def fashn_tryon():
         )
 
 
-        print(
-            "MODEL:",
-            model_file.filename
-        )
-
-        print(
-            "SAREE:",
-            garment_file.filename
-        )
-
-
         # ----------------------------------------------------
-        # OPTIONS FROM WEBSITE
+        # OPTIONAL WEBSITE SETTINGS
         # ----------------------------------------------------
 
         hairstyle = request.form.get(
@@ -278,7 +294,7 @@ def fashn_tryon():
 
 
         # ----------------------------------------------------
-        # QUALITY
+        # RESOLUTION
         # ----------------------------------------------------
 
         resolution = request.form.get(
@@ -295,6 +311,10 @@ def fashn_tryon():
 
             resolution = "2k"
 
+
+        # ----------------------------------------------------
+        # GENERATION MODE
+        # ----------------------------------------------------
 
         generation_mode = request.form.get(
             "generation_mode",
@@ -329,10 +349,14 @@ def fashn_tryon():
             num_images = 1
 
 
-        num_images = max(
-            1,
-            min(num_images, 4)
-        )
+        if num_images < 1:
+
+            num_images = 1
+
+
+        if num_images > 4:
+
+            num_images = 4
 
 
         # ----------------------------------------------------
@@ -353,203 +377,66 @@ def fashn_tryon():
             seed = 42
 
 
-        # ----------------------------------------------------
-        # SAREE PROMPT
-        # ----------------------------------------------------
+        if seed < 0:
 
-        prompt = """
-Create a highly realistic Indian bridal saree
-virtual try-on.
-
-Use the EXACT person from the model image.
-
-Preserve the person's:
-
-- face
-- facial identity
-- facial structure
-- skin tone
-- body proportions
-- pose
-- hands
-- natural appearance
-
-Do not create a different person.
-
-Use the EXACT saree/product shown in the
-product image.
-
-Preserve the saree's:
-
-- original color
-- original fabric
-- original pattern
-- original motifs
-- original border
-- original pallu
-- original decorative details
-
-Do not replace the saree with a generic saree.
-
-The product must remain visually faithful
-to the supplied saree.
-
-Dress the person in a traditional
-Indian saree.
-
-IMPORTANT SAREE DRAPING:
-
-The saree should look physically worn,
-professionally draped and naturally fitted.
-
-Create a traditional Indian front drape
-with clearly visible, compact,
-well-organized vertical saree pleats.
-
-The front pleats should be:
-
-- narrow
-- numerous
-- compact
-- vertical
-- evenly arranged
-- neatly folded
-- professionally pressed
-- gathered naturally at the waist
-- falling naturally downward
-
-Do not make the lower body look like
-a skirt or gown.
-
-Do not spread the saree fabric into
-one large flat panel.
-
-Keep the saree border visible.
-
-Keep the pallu separate from the
-front pleats and drape it naturally
-over the shoulder.
-
-The final result should look like a
-real Indian bridal fashion photograph.
-
-Maintain realistic:
-
-- fabric folds
-- fabric tension
-- shadows
-- lighting
-- skin texture
-- hair
-- anatomy
-- hands
-- proportions
-
-Do not add text.
-
-Do not add logos.
-
-Do not add watermarks.
-
-Do not change the person's identity.
-
-Do not invent a different saree.
-"""
+            seed = 42
 
 
         # ----------------------------------------------------
-        # HAIRSTYLE
+        # PROMPT
+        #
+        # IMPORTANT:
+        # KEEP THIS VERY SHORT.
+        #
+        # We do NOT ask the AI to create a new model,
+        # new background, new face, new hairstyle, etc.
         # ----------------------------------------------------
 
-        if hairstyle.lower() not in [
-            "original",
-            "natural",
-            "keep original"
-        ]:
-
-            prompt += f"""
-
-HAIRSTYLE:
-
-Apply this requested hairstyle:
-
-{hairstyle}
-
-Keep the SAME person's face and identity.
-
-The hairstyle must look realistic,
-natural and suitable for an Indian
-bridal fashion photograph.
-
-Do not alter facial identity.
-"""
-
-
-        else:
-
-            prompt += """
-
-HAIRSTYLE:
-
-Keep the person's original hairstyle.
-
-Do not unnecessarily change the hair.
-"""
+        prompt = request.form.get(
+            "prompt",
+            ""
+        ).strip()
 
 
         # ----------------------------------------------------
-        # BACKGROUND
+        # DEFAULT SAREE INSTRUCTION
         # ----------------------------------------------------
 
-        if background.lower() not in [
-            "original",
-            "keep photo",
-            "keep original"
-        ]:
+        if not prompt:
 
-            prompt += f"""
-
-BACKGROUND:
-
-Use this background:
-
-{background}
-
-Keep the person and saree realistic.
-
-Use natural depth, lighting and shadows.
-
-Do not distort the person or saree.
-"""
-
-        else:
-
-            prompt += """
-
-BACKGROUND:
-
-Keep the original background
-from the model image.
-"""
+            prompt = (
+                "Apply the supplied saree naturally "
+                "to the person. Preserve the person's "
+                "identity, pose, body proportions and "
+                "original appearance. Preserve the "
+                "saree's original color, pattern, border, "
+                "motifs and pallu. Use a traditional "
+                "Indian saree drape with neat compact "
+                "front pleats and a natural shoulder pallu."
+            )
 
 
         # ----------------------------------------------------
-        # FINAL PROMPT
+        # PRINT SETTINGS
         # ----------------------------------------------------
 
         print("")
-        print("HAIRSTYLE:", hairstyle)
-        print("BACKGROUND:", background)
+        print("----------------------------------------")
+        print("PROVIDER: FASHN")
+        print("MODEL: tryon-max")
         print("RESOLUTION:", resolution)
         print("MODE:", generation_mode)
         print("NUM IMAGES:", num_images)
         print("SEED:", seed)
-        print("========================================")
+        print("HAIRSTYLE:", hairstyle)
+        print("BACKGROUND:", background)
+        print("PROMPT:", prompt)
+        print("----------------------------------------")
 
 
-        # ----------------------------------------------------
-        # FASHN TRY-ON MAX PAYLOAD
-        # ----------------------------------------------------
+        # ====================================================
+        # FASHN REQUEST
+        # ====================================================
 
         payload = {
 
@@ -573,6 +460,9 @@ from the model image.
                 "generation_mode":
                     generation_mode,
 
+                "seed":
+                    seed,
+
                 "num_images":
                     num_images,
 
@@ -580,10 +470,7 @@ from the model image.
                     "png",
 
                 "return_base64":
-                    False,
-
-                "seed":
-                    seed
+                    False
 
             }
 
@@ -591,7 +478,7 @@ from the model image.
 
 
         # ----------------------------------------------------
-        # SEND REQUEST
+        # START REQUEST
         # ----------------------------------------------------
 
         print("")
@@ -603,14 +490,14 @@ from the model image.
 
         response = requests.post(
 
-            f"{FASHN_URL}/run",
+            FASHN_URL + "/run",
 
             json=payload,
 
             headers={
 
                 "Authorization":
-                    f"Bearer {FASHN_API_KEY}",
+                    "Bearer " + FASHN_API_KEY,
 
                 "Content-Type":
                     "application/json"
@@ -629,7 +516,7 @@ from the model image.
 
 
         print(
-            "FASHN STATUS:",
+            "FASHN HTTP STATUS:",
             response.status_code
         )
 
@@ -641,7 +528,7 @@ from the model image.
 
 
         # ----------------------------------------------------
-        # API ERROR
+        # FASHN API ERROR
         # ----------------------------------------------------
 
         if not response.ok:
@@ -655,8 +542,10 @@ from the model image.
             except Exception:
 
                 error_data = {
+
                     "raw":
                         response.text[:5000]
+
                 }
 
 
@@ -668,8 +557,7 @@ from the model image.
 
             return jsonify({
 
-                "success":
-                    False,
+                "success": False,
 
                 "error":
                     "FASHN request failed.",
@@ -684,7 +572,7 @@ from the model image.
 
 
         # ----------------------------------------------------
-        # PARSE
+        # PARSE START RESPONSE
         # ----------------------------------------------------
 
         try:
@@ -697,8 +585,7 @@ from the model image.
 
             return jsonify({
 
-                "success":
-                    False,
+                "success": False,
 
                 "error":
                     "FASHN returned invalid JSON.",
@@ -716,10 +603,15 @@ from the model image.
 
         if not prediction_id:
 
+            print(
+                "NO PREDICTION ID:",
+                run_data
+            )
+
+
             return jsonify({
 
-                "success":
-                    False,
+                "success": False,
 
                 "error":
                     "FASHN returned no prediction ID.",
@@ -736,9 +628,9 @@ from the model image.
         )
 
 
-        # ----------------------------------------------------
-        # POLL
-        # ----------------------------------------------------
+        # ====================================================
+        # POLL RESULT
+        # ====================================================
 
         for attempt in range(60):
 
@@ -747,12 +639,14 @@ from the model image.
 
             status_response = requests.get(
 
-                f"{FASHN_URL}/status/{prediction_id}",
+                FASHN_URL
+                + "/status/"
+                + prediction_id,
 
                 headers={
 
                     "Authorization":
-                        f"Bearer {FASHN_API_KEY}"
+                        "Bearer " + FASHN_API_KEY
 
                 },
 
@@ -780,7 +674,7 @@ from the model image.
 
 
             print(
-                "FASHN STATUS:",
+                "STATUS:",
                 status,
                 "| ATTEMPT:",
                 attempt + 1
@@ -805,26 +699,27 @@ from the model image.
 
                     return jsonify({
 
-                        "success":
-                            False,
+                        "success": False,
 
                         "error":
-                            "FASHN completed but returned no image."
+                            "FASHN completed but returned no image.",
+
+                        "prediction_id":
+                            prediction_id
 
                     }), 502
 
 
                 print("")
                 print("========================================")
-                print("✅ FASHN TRY-ON COMPLETE")
-                print("IMAGES:", len(output))
+                print("✅ VTON COMPLETE")
+                print("OUTPUT COUNT:", len(output))
                 print("========================================")
 
 
                 return jsonify({
 
-                    "success":
-                        True,
+                    "success": True,
 
                     "provider":
                         "fashn",
@@ -864,22 +759,26 @@ from the model image.
             # ------------------------------------------------
 
             if status in [
+
                 "failed",
+
                 "cancelled",
+
                 "canceled",
+
                 "error"
+
             ]:
 
                 print(
-                    "FASHN FAILED:",
+                    "FASHN GENERATION FAILED:",
                     status_data
                 )
 
 
                 return jsonify({
 
-                    "success":
-                        False,
+                    "success": False,
 
                     "error":
                         "FASHN try-on failed.",
@@ -896,14 +795,24 @@ from the model image.
                 }), 502
 
 
-        # ----------------------------------------------------
-        # TIMEOUT
-        # ----------------------------------------------------
+            # ------------------------------------------------
+            # UNKNOWN STATUS
+            # ------------------------------------------------
+
+            if status is None:
+
+                print(
+                    "WARNING: No status returned"
+                )
+
+
+        # ====================================================
+        # POLLING TIMEOUT
+        # ====================================================
 
         return jsonify({
 
-            "success":
-                False,
+            "success": False,
 
             "error":
                 "FASHN prediction timed out.",
@@ -915,7 +824,7 @@ from the model image.
 
 
     # ========================================================
-    # REQUEST ERROR
+    # TIMEOUT
     # ========================================================
 
     except requests.exceptions.Timeout:
@@ -924,16 +833,20 @@ from the model image.
             "❌ FASHN REQUEST TIMEOUT"
         )
 
+
         return jsonify({
 
-            "success":
-                False,
+            "success": False,
 
             "error":
                 "FASHN request timed out."
 
         }), 504
 
+
+    # ========================================================
+    # NETWORK ERROR
+    # ========================================================
 
     except requests.exceptions.RequestException as e:
 
@@ -942,10 +855,10 @@ from the model image.
             repr(e)
         )
 
+
         return jsonify({
 
-            "success":
-                False,
+            "success": False,
 
             "error":
                 "Could not connect to FASHN.",
@@ -956,6 +869,10 @@ from the model image.
         }), 502
 
 
+    # ========================================================
+    # GENERAL ERROR
+    # ========================================================
+
     except Exception as e:
 
         print(
@@ -963,10 +880,10 @@ from the model image.
             repr(e)
         )
 
+
         return jsonify({
 
-            "success":
-                False,
+            "success": False,
 
             "error":
                 str(e)
@@ -975,20 +892,19 @@ from the model image.
 
 
 # ============================================================
-# MAIN TRY-ON ROUTE
+# OPTIONAL OLD ROUTE
+#
+# Keep this so an old website endpoint doesn't break.
+# It points to the same new VTON engine.
 # ============================================================
 
 @app.route(
-    "/api/tryon",
+    "/api/fashn-tryon",
     methods=["POST"]
 )
-def tryon():
+def fashn_tryon():
 
-    print(
-        "🔄 /api/tryon -> FASHN TRY-ON MAX"
-    )
-
-    return fashn_tryon()
+    return tryon()
 
 
 # ============================================================
@@ -1000,8 +916,7 @@ def not_found(error):
 
     return jsonify({
 
-        "success":
-            False,
+        "success": False,
 
         "error":
             "Flask 404",
@@ -1019,10 +934,15 @@ def not_found(error):
 if __name__ == "__main__":
 
     port = int(
+
         os.environ.get(
+
             "PORT",
+
             "8080"
+
         )
+
     )
 
 
