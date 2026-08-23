@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, render_template
 
 app = Flask(__name__)
 
-FASHN_API_KEY = os.environ.get("fa-vCE48mVgLYPn-A13fufqwI9FX39Iud5qNOpVO")
+FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
 
 FASHN_URL = "https://api.fashn.ai/v1"
 
