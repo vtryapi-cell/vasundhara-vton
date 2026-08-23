@@ -7,20 +7,13 @@ from flask import Flask, jsonify, request, render_template
 
 
 # ============================================================
-# FLASK APP
+# VASUNDHARA VTON - FASHN TRY-ON MAX
 # ============================================================
 
 app = Flask(__name__)
 
-
-# ============================================================
-# API CONFIGURATION
-# ============================================================
-
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 FASHN_API_KEY = os.environ.get("FASHN_API_KEY")
 
-OPENAI_URL = "https://api.openai.com/v1/images/edits"
 FASHN_URL = "https://api.fashn.ai/v1"
 
 
@@ -28,20 +21,19 @@ print("========================================")
 print("VASUNDHARA VTON SERVER STARTING")
 print("========================================")
 print("APP FILE:", __file__)
-print("OPENAI KEY PRESENT:", bool(OPENAI_API_KEY))
 print("FASHN KEY PRESENT:", bool(FASHN_API_KEY))
+print("ENGINE: FASHN TRY-ON MAX")
 print("========================================")
 
 
 # ============================================================
-# HOME PAGE
+# HOME
 # ============================================================
 
 @app.route("/", methods=["GET"])
 def home():
 
     try:
-
         return render_template("index.html")
 
     except Exception as e:
@@ -53,17 +45,22 @@ def home():
         <head>
             <title>Vasundhara VTON</title>
         </head>
+
         <body>
+
             <h1>VASUNDHARA VTON SERVER IS RUNNING</h1>
+
             <p>Template error:</p>
+
             <pre>{}</pre>
+
         </body>
         </html>
         """.format(str(e))
 
 
 # ============================================================
-# HEALTH CHECK
+# HEALTH
 # ============================================================
 
 @app.route("/health", methods=["GET"])
@@ -76,8 +73,11 @@ def health():
         "message":
             "VASUNDHARA VTON SERVER IS RUNNING",
 
-        "openai_key_present":
-            bool(OPENAI_API_KEY),
+        "provider":
+            "FASHN",
+
+        "model":
+            "tryon-max",
 
         "fashn_key_present":
             bool(FASHN_API_KEY)
@@ -99,11 +99,14 @@ def debug():
         "app_file":
             __file__,
 
-        "openai_key_present":
-            bool(OPENAI_API_KEY),
-
         "fashn_key_present":
             bool(FASHN_API_KEY),
+
+        "provider":
+            "fashn",
+
+        "model":
+            "tryon-max",
 
         "routes": [
             str(rule)
@@ -114,7 +117,7 @@ def debug():
 
 
 # ============================================================
-# GET UPLOADED FILES
+# GET UPLOADED IMAGES
 # ============================================================
 
 def get_uploaded_files():
@@ -129,7 +132,6 @@ def get_uploaded_files():
             "person"
         )
 
-
     garment_file = request.files.get(
         "garment_image"
     )
@@ -140,44 +142,68 @@ def get_uploaded_files():
             "garment"
         )
 
-
     return model_file, garment_file
 
 
 # ============================================================
-# OPENAI TRY-ON
+# CONVERT FILE TO DATA URI
+# ============================================================
+
+def file_to_data_uri(file_object):
+
+    data = file_object.read()
+
+    if not data:
+        raise ValueError("Uploaded image is empty.")
+
+    content_type = (
+        file_object.content_type
+        or "image/jpeg"
+    )
+
+    encoded = base64.b64encode(
+        data
+    ).decode("utf-8")
+
+    return (
+        f"data:{content_type};base64,{encoded}"
+    )
+
+
+# ============================================================
+# FASHN TRY-ON MAX
 # ============================================================
 
 @app.route(
-    "/api/openai-tryon",
+    "/api/fashn-tryon",
     methods=["POST"]
 )
-def openai_tryon():
+def fashn_tryon():
 
     print("")
     print("========================================")
-    print("OPENAI TRY-ON REQUEST")
+    print("FASHN TRY-ON MAX REQUEST")
     print("========================================")
 
 
     # --------------------------------------------------------
-    # CHECK API KEY
+    # API KEY
     # --------------------------------------------------------
 
-    if not OPENAI_API_KEY:
+    if not FASHN_API_KEY:
 
         return jsonify({
 
             "success": False,
 
             "error":
-                "OPENAI_API_KEY is not configured."
+                "FASHN_API_KEY is not configured."
 
         }), 500
 
 
     # --------------------------------------------------------
-    # GET FILES
+    # FILES
     # --------------------------------------------------------
 
     model_file, garment_file = (
@@ -209,407 +235,215 @@ def openai_tryon():
         }), 400
 
 
-    # --------------------------------------------------------
-    # GET HAIRSTYLE
-    # --------------------------------------------------------
-
-    hairstyle = request.form.get(
-        "hairstyle",
-        "Natural"
-    ).strip()
-
-
-    # --------------------------------------------------------
-    # GET BACKGROUND
-    # --------------------------------------------------------
-
-    background = request.form.get(
-        "background",
-        "Original"
-    ).strip()
-
-
-    print(
-        "SELECTED HAIRSTYLE:",
-        hairstyle
-    )
-
-    print(
-        "SELECTED BACKGROUND:",
-        background
-    )
-
-
-    # --------------------------------------------------------
-    # READ IMAGES
-    # --------------------------------------------------------
-
     try:
 
-        model_data = model_file.read()
+        # ----------------------------------------------------
+        # READ IMAGES
+        # ----------------------------------------------------
 
-        garment_data = garment_file.read()
+        model_image = file_to_data_uri(
+            model_file
+        )
 
-
-        if not model_data:
-
-            return jsonify({
-
-                "success": False,
-
-                "error":
-                    "Model image is empty."
-
-            }), 400
-
-
-        if not garment_data:
-
-            return jsonify({
-
-                "success": False,
-
-                "error":
-                    "Saree image is empty."
-
-            }), 400
-
-
-        print(
-            "MODEL IMAGE:",
-            model_file.filename,
-            len(model_data),
-            "bytes"
+        garment_image = file_to_data_uri(
+            garment_file
         )
 
 
         print(
-            "SAREE IMAGE:",
-            garment_file.filename,
-            len(garment_data),
-            "bytes"
+            "MODEL:",
+            model_file.filename
+        )
+
+        print(
+            "SAREE:",
+            garment_file.filename
         )
 
 
-        # ====================================================
-        # HAIRSTYLE INSTRUCTION
-        # ====================================================
+        # ----------------------------------------------------
+        # OPTIONS FROM WEBSITE
+        # ----------------------------------------------------
 
-        if hairstyle.lower() in [
-            "natural",
-            "original"
+        hairstyle = request.form.get(
+            "hairstyle",
+            "Original"
+        ).strip()
+
+
+        background = request.form.get(
+            "background",
+            "Original"
+        ).strip()
+
+
+        # ----------------------------------------------------
+        # QUALITY
+        # ----------------------------------------------------
+
+        resolution = request.form.get(
+            "resolution",
+            "2k"
+        ).strip().lower()
+
+
+        if resolution not in [
+            "1k",
+            "2k",
+            "4k"
         ]:
 
-            hairstyle_instruction = """
-
-HAIRSTYLE:
-Keep the person's original hairstyle
-exactly as shown in IMAGE 1.
-
-Do not change the hair.
-Do not alter the face.
-Do not alter the identity.
-
-"""
-
-        else:
-
-            hairstyle_instruction = f"""
-
-HAIRSTYLE:
-The selected hairstyle is:
-
-{hairstyle}
-
-Change the person's hairstyle to this
-selected hairstyle.
-
-The hairstyle must be clearly visible.
-
-IMPORTANT:
-
-- Keep the SAME person.
-- Keep the SAME face.
-- Keep the SAME facial features.
-- Keep the SAME skin tone.
-- Keep the SAME age.
-- Do not create a different person.
-- Do not change facial identity.
-- Make the hairstyle realistic.
-- Make the hairstyle naturally fit the head.
-- Use realistic Indian hair texture.
-- Use realistic lighting on the hair.
-- Make it look like professional bridal/fashion styling.
-
-"""
+            resolution = "2k"
 
 
-        # ====================================================
-        # BACKGROUND INSTRUCTION
-        # ====================================================
+        generation_mode = request.form.get(
+            "generation_mode",
+            "quality"
+        ).strip().lower()
 
-        if background.lower() in [
-            "original",
-            "keep photo"
+
+        if generation_mode not in [
+            "fast",
+            "balanced",
+            "quality"
         ]:
 
-            background_instruction = """
-
-BACKGROUND:
-Keep the original background
-from IMAGE 1.
-
-Do not replace the background.
-
-"""
-
-        else:
-
-            background_instruction = f"""
-
-BACKGROUND:
-Replace the original background with:
-
-{background}
-
-The background must look like a
-professional Indian fashion photograph.
-
-IMPORTANT:
-
-- Keep the person clearly visible.
-- Keep the person separated from the background.
-- Use realistic depth.
-- Use realistic shadows.
-- Use realistic lighting.
-- Do not distort the person.
-- Do not distort the saree.
-- Do not add text.
-- Do not add logos.
-- Make the environment photorealistic.
-
-"""
+            generation_mode = "quality"
 
 
-        # ====================================================
-        # MAIN PROMPT
-        # ====================================================
+        # ----------------------------------------------------
+        # NUMBER OF IMAGES
+        # ----------------------------------------------------
 
-        prompt = f"""
+        try:
 
-You are creating a PREMIUM INDIAN BRIDAL SAREE
-VIRTUAL TRY-ON IMAGE.
+            num_images = int(
+                request.form.get(
+                    "num_images",
+                    "1"
+                )
+            )
 
-IMAGE 1 = PERSON / MODEL
+        except Exception:
 
-IMAGE 2 = SAREE PRODUCT IMAGE
+            num_images = 1
 
 
-============================================================
-PERSON
-============================================================
+        num_images = max(
+            1,
+            min(num_images, 4)
+        )
 
-Use the EXACT PERSON from IMAGE 1.
 
-Preserve:
+        # ----------------------------------------------------
+        # SEED
+        # ----------------------------------------------------
+
+        try:
+
+            seed = int(
+                request.form.get(
+                    "seed",
+                    "42"
+                )
+            )
+
+        except Exception:
+
+            seed = 42
+
+
+        # ----------------------------------------------------
+        # SAREE PROMPT
+        # ----------------------------------------------------
+
+        prompt = """
+Create a highly realistic Indian bridal saree
+virtual try-on.
+
+Use the EXACT person from the model image.
+
+Preserve the person's:
 
 - face
 - facial identity
-- facial features
+- facial structure
 - skin tone
 - body proportions
+- pose
+- hands
 - natural appearance
-- realistic hands
-- realistic arms
-- realistic body shape
 
-DO NOT create a different person.
+Do not create a different person.
 
-DO NOT change the person's identity.
+Use the EXACT saree/product shown in the
+product image.
 
-DO NOT change the person's facial structure.
+Preserve the saree's:
 
+- original color
+- original fabric
+- original pattern
+- original motifs
+- original border
+- original pallu
+- original decorative details
 
-============================================================
-SAREE PRODUCT
-============================================================
+Do not replace the saree with a generic saree.
 
-Use the EXACT SAREE from IMAGE 2.
+The product must remain visually faithful
+to the supplied saree.
 
-Preserve the actual:
+Dress the person in a traditional
+Indian saree.
 
-- saree color
-- saree pattern
-- saree motifs
-- saree border
-- saree pallu
-- fabric appearance
-- woven design
-- decorative details
+IMPORTANT SAREE DRAPING:
 
-DO NOT invent another saree.
+The saree should look physically worn,
+professionally draped and naturally fitted.
 
-DO NOT change the saree color.
+Create a traditional Indian front drape
+with clearly visible, compact,
+well-organized vertical saree pleats.
 
-DO NOT replace the saree with a generic saree.
-
-DO NOT turn it into a:
-
-- gown
-- dress
-- skirt
-- lehenga
-- salwar suit
-- kurti
-- western outfit
-- jumpsuit
-
-
-============================================================
-TRADITIONAL INDIAN SAREE DRAPING
-============================================================
-
-Dress the person in the exact saree.
-
-The saree must be worn as a
-traditional Indian saree.
-
-The saree must:
-
-- wrap naturally around the waist
-- cover the lower body
-- have realistic fabric tension
-- have realistic folds
-- have realistic border placement
-- have a natural pallu
-- have a proper shoulder drape
-- look physically worn
-- look like professionally draped Indian bridal clothing
-
-
-============================================================
-BRIDAL FRONT PLEATS
-============================================================
-
-THIS IS EXTREMELY IMPORTANT.
-
-The FRONT SAREE PLEATS MUST BE
-PROPERLY FOLDED IN A TRADITIONAL
-INDIAN BRIDAL STYLE.
-
-The front pleats must be:
+The front pleats should be:
 
 - narrow
 - numerous
 - compact
 - vertical
 - evenly arranged
-- tightly folded
-- neatly stacked
-- symmetrical
+- neatly folded
 - professionally pressed
-- clearly visible
-- starting from the waist
-- falling vertically downward
+- gathered naturally at the waist
+- falling naturally downward
 
-The pleats must remain together
-in the center/front of the lower body.
+Do not make the lower body look like
+a skirt or gown.
 
-DO NOT leave loose fabric in the front.
+Do not spread the saree fabric into
+one large flat panel.
 
-DO NOT leave a large unfolded sheet
-of saree fabric in front.
+Keep the saree border visible.
 
-DO NOT make the saree look like a skirt.
+Keep the pallu separate from the
+front pleats and drape it naturally
+over the shoulder.
 
-DO NOT spread the pleats widely apart.
+The final result should look like a
+real Indian bridal fashion photograph.
 
-DO NOT leave loose fabric hanging
-between the legs.
+Maintain realistic:
 
-DO NOT make random fabric folds.
-
-DO NOT create one large flat fabric panel.
-
-DO NOT leave the saree unfolded.
-
-The front pleats should look like
-a professional Indian bridal saree
-has been carefully hand-folded and tucked.
-
-The bottom saree border should remain
-visible across the folded pleats.
-
-The pleats must preserve the exact
-border and motifs from IMAGE 2.
-
-The pallu must remain separate from
-the front pleats.
-
-The pallu should fall naturally over
-the shoulder.
-
-
-============================================================
-BRIDAL FINISH
-============================================================
-
-Make the saree look like it has been
-professionally draped for an Indian wedding.
-
-The overall appearance should be:
-
-- elegant
-- traditional
-- bridal
-- premium
-- realistic
-- photographic
-
-Keep the saree neat and structured.
-
-The front pleats are a priority.
-
-
-============================================================
-HAIRSTYLE
-============================================================
-
-{hairstyle_instruction}
-
-
-============================================================
-BACKGROUND
-============================================================
-
-{background_instruction}
-
-
-============================================================
-REALISM
-============================================================
-
-The final image must look like a
-professional Indian fashion e-commerce photograph.
-
-Use realistic:
-
-- skin texture
-- hair texture
-- fabric texture
-- saree folds
-- pleat structure
-- lighting
+- fabric folds
+- fabric tension
 - shadows
-- proportions
+- lighting
+- skin texture
+- hair
 - anatomy
 - hands
-- jewelry
-- fabric tension
-
-Do not produce cartoon-like results.
-
-Do not produce painted results.
+- proportions
 
 Do not add text.
 
@@ -617,146 +451,151 @@ Do not add logos.
 
 Do not add watermarks.
 
+Do not change the person's identity.
 
-============================================================
-FINAL REQUIREMENTS
-============================================================
-
-The final image MUST contain:
-
-1. The SAME person.
-2. The EXACT saree from IMAGE 2.
-3. Traditional Indian saree draping.
-4. CLEARLY FOLDED bridal front pleats.
-5. Compact vertical pleats.
-6. No loose unfolded front fabric.
-7. Correct saree border placement.
-8. Natural pallu.
-9. Selected hairstyle: {hairstyle}.
-10. Selected background: {background}.
-11. Photorealistic fashion photography.
-12. Premium Indian bridal appearance.
-
-PRIORITY ORDER:
-
-1. Preserve person identity.
-2. Preserve exact saree design.
-3. Create properly folded bridal front pleats.
-4. Apply selected hairstyle.
-5. Apply selected background.
-6. Maintain photorealistic quality.
-
+Do not invent a different saree.
 """
 
 
+        # ----------------------------------------------------
+        # HAIRSTYLE
+        # ----------------------------------------------------
+
+        if hairstyle.lower() not in [
+            "original",
+            "natural",
+            "keep original"
+        ]:
+
+            prompt += f"""
+
+HAIRSTYLE:
+
+Apply this requested hairstyle:
+
+{hairstyle}
+
+Keep the SAME person's face and identity.
+
+The hairstyle must look realistic,
+natural and suitable for an Indian
+bridal fashion photograph.
+
+Do not alter facial identity.
+"""
+
+
+        else:
+
+            prompt += """
+
+HAIRSTYLE:
+
+Keep the person's original hairstyle.
+
+Do not unnecessarily change the hair.
+"""
+
+
+        # ----------------------------------------------------
+        # BACKGROUND
+        # ----------------------------------------------------
+
+        if background.lower() not in [
+            "original",
+            "keep photo",
+            "keep original"
+        ]:
+
+            prompt += f"""
+
+BACKGROUND:
+
+Use this background:
+
+{background}
+
+Keep the person and saree realistic.
+
+Use natural depth, lighting and shadows.
+
+Do not distort the person or saree.
+"""
+
+        else:
+
+            prompt += """
+
+BACKGROUND:
+
+Keep the original background
+from the model image.
+"""
+
+
+        # ----------------------------------------------------
+        # FINAL PROMPT
+        # ----------------------------------------------------
+
         print("")
-        print("========================================")
-        print("AI PROMPT PREPARED")
         print("HAIRSTYLE:", hairstyle)
         print("BACKGROUND:", background)
-        print("BRIDAL PLEATS: ENABLED")
+        print("RESOLUTION:", resolution)
+        print("MODE:", generation_mode)
+        print("NUM IMAGES:", num_images)
+        print("SEED:", seed)
         print("========================================")
 
 
-        # ====================================================
-        # FILE NAMES
-        # ====================================================
+        # ----------------------------------------------------
+        # FASHN TRY-ON MAX PAYLOAD
+        # ----------------------------------------------------
 
-        model_filename = (
-            model_file.filename
-            or "model.jpg"
-        )
+        payload = {
 
-        garment_filename = (
-            garment_file.filename
-            or "saree.jpg"
-        )
+            "model_name":
+                "tryon-max",
 
+            "inputs": {
 
-        model_content_type = (
-            model_file.content_type
-            or "image/jpeg"
-        )
+                "model_image":
+                    model_image,
 
-        garment_content_type = (
-            garment_file.content_type
-            or "image/jpeg"
-        )
+                "product_image":
+                    garment_image,
 
+                "prompt":
+                    prompt,
 
-        # ====================================================
-        # OPENAI FILES
-        # ====================================================
+                "resolution":
+                    resolution,
 
-        files = [
+                "generation_mode":
+                    generation_mode,
 
-            (
-                "image[]",
-                (
-                    model_filename,
-                    model_data,
-                    model_content_type
-                )
-            ),
+                "num_images":
+                    num_images,
 
-            (
-                "image[]",
-                (
-                    garment_filename,
-                    garment_data,
-                    garment_content_type
-                )
-            )
+                "output_format":
+                    "png",
 
-        ]
+                "return_base64":
+                    False,
 
+                "seed":
+                    seed
 
-        # ====================================================
-        # OPENAI REQUEST DATA
-        # ====================================================
-
-        data = {
-
-            "model":
-                "gpt-image-1-mini",
-
-            "prompt":
-                prompt,
-
-            "size":
-                "1024x1536",
-
-            "quality":
-                "low"
+            }
 
         }
 
 
-        headers = {
-
-            "Authorization":
-                f"Bearer {OPENAI_API_KEY}"
-
-        }
-
-
-        # ====================================================
-        # CALL OPENAI
-        # ====================================================
+        # ----------------------------------------------------
+        # SEND REQUEST
+        # ----------------------------------------------------
 
         print("")
-        print("🚀 CALLING OPENAI...")
-        print(
-            "HAIRSTYLE:",
-            hairstyle
-        )
-        print(
-            "BACKGROUND:",
-            background
-        )
-        print(
-            "BRIDAL PLEATS: YES"
-        )
+        print("🚀 CALLING FASHN TRY-ON MAX...")
 
 
         start_time = time.time()
@@ -764,15 +603,21 @@ PRIORITY ORDER:
 
         response = requests.post(
 
-            OPENAI_URL,
+            f"{FASHN_URL}/run",
 
-            headers=headers,
+            json=payload,
 
-            files=files,
+            headers={
 
-            data=data,
+                "Authorization":
+                    f"Bearer {FASHN_API_KEY}",
 
-            timeout=240
+                "Content-Type":
+                    "application/json"
+
+            },
+
+            timeout=120
 
         )
 
@@ -784,58 +629,40 @@ PRIORITY ORDER:
 
 
         print(
-            "OPENAI STATUS:",
+            "FASHN STATUS:",
             response.status_code
         )
 
         print(
-            "OPENAI TIME:",
+            "REQUEST TIME:",
             round(elapsed, 2),
             "seconds"
         )
 
 
-        # ====================================================
-        # OPENAI ERROR
-        # ====================================================
+        # ----------------------------------------------------
+        # API ERROR
+        # ----------------------------------------------------
 
         if not response.ok:
 
             try:
 
-                error_json = (
+                error_data = (
                     response.json()
                 )
 
             except Exception:
 
-                error_json = {}
-
-
-            error_message = ""
-
-
-            if isinstance(
-                error_json.get("error"),
-                dict
-            ):
-
-                error_message = (
-                    error_json["error"]
-                    .get("message", "")
-                )
-
-
-            if not error_message:
-
-                error_message = (
-                    response.text[:5000]
-                )
+                error_data = {
+                    "raw":
+                        response.text[:5000]
+                }
 
 
             print(
-                "OPENAI ERROR:",
-                error_message
+                "FASHN ERROR:",
+                error_data
             )
 
 
@@ -845,33 +672,28 @@ PRIORITY ORDER:
                     False,
 
                 "error":
-                    "OpenAI image generation failed.",
+                    "FASHN request failed.",
 
                 "details":
-                    error_message,
+                    error_data,
 
-                "openai_status":
+                "status":
                     response.status_code
 
             }), 502
 
 
-        # ====================================================
-        # PARSE RESPONSE
-        # ====================================================
+        # ----------------------------------------------------
+        # PARSE
+        # ----------------------------------------------------
 
         try:
 
-            result = (
+            run_data = (
                 response.json()
             )
 
         except Exception as e:
-
-            print(
-                "JSON ERROR:",
-                repr(e)
-            )
 
             return jsonify({
 
@@ -879,7 +701,7 @@ PRIORITY ORDER:
                     False,
 
                 "error":
-                    "OpenAI returned invalid JSON.",
+                    "FASHN returned invalid JSON.",
 
                 "details":
                     str(e)
@@ -887,16 +709,12 @@ PRIORITY ORDER:
             }), 502
 
 
-        # ====================================================
-        # CHECK IMAGE DATA
-        # ====================================================
+        prediction_id = (
+            run_data.get("id")
+        )
 
-        if not result.get("data"):
 
-            print(
-                "NO IMAGE DATA:",
-                result
-            )
+        if not prediction_id:
 
             return jsonify({
 
@@ -904,97 +722,206 @@ PRIORITY ORDER:
                     False,
 
                 "error":
-                    "OpenAI returned no image.",
+                    "FASHN returned no prediction ID.",
 
                 "response":
-                    result
+                    run_data
 
             }), 502
 
 
-        image_b64 = (
-            result["data"][0]
-            .get("b64_json")
+        print(
+            "PREDICTION ID:",
+            prediction_id
         )
 
 
-        if not image_b64:
+        # ----------------------------------------------------
+        # POLL
+        # ----------------------------------------------------
 
-            print(
-                "NO B64 IMAGE DATA"
+        for attempt in range(60):
+
+            time.sleep(3)
+
+
+            status_response = requests.get(
+
+                f"{FASHN_URL}/status/{prediction_id}",
+
+                headers={
+
+                    "Authorization":
+                        f"Bearer {FASHN_API_KEY}"
+
+                },
+
+                timeout=60
+
             )
 
-            return jsonify({
 
-                "success":
-                    False,
+            try:
 
-                "error":
-                    "OpenAI returned no image data.",
+                status_data = (
+                    status_response.json()
+                )
 
-                "response":
-                    result
+            except Exception:
 
-            }), 502
+                status_data = {}
 
 
-        # ====================================================
-        # IMAGE URL
-        # ====================================================
-
-        image_url = (
-            "data:image/png;base64,"
-            + image_b64
-        )
+            status = (
+                status_data.get(
+                    "status"
+                )
+            )
 
 
-        print("")
-        print("========================================")
-        print("✅ IMAGE GENERATED")
-        print("HAIRSTYLE:", hairstyle)
-        print("BACKGROUND:", background)
-        print("BRIDAL PLEATS: YES")
-        print("========================================")
+            print(
+                "FASHN STATUS:",
+                status,
+                "| ATTEMPT:",
+                attempt + 1
+            )
 
 
-        # ====================================================
-        # RETURN RESULT
-        # ====================================================
+            # ------------------------------------------------
+            # COMPLETED
+            # ------------------------------------------------
+
+            if status == "completed":
+
+                output = (
+                    status_data.get(
+                        "output",
+                        []
+                    )
+                )
+
+
+                if not output:
+
+                    return jsonify({
+
+                        "success":
+                            False,
+
+                        "error":
+                            "FASHN completed but returned no image."
+
+                    }), 502
+
+
+                print("")
+                print("========================================")
+                print("✅ FASHN TRY-ON COMPLETE")
+                print("IMAGES:", len(output))
+                print("========================================")
+
+
+                return jsonify({
+
+                    "success":
+                        True,
+
+                    "provider":
+                        "fashn",
+
+                    "model":
+                        "tryon-max",
+
+                    "prediction_id":
+                        prediction_id,
+
+                    "image_url":
+                        output[0],
+
+                    "images":
+                        output,
+
+                    "hairstyle":
+                        hairstyle,
+
+                    "background":
+                        background,
+
+                    "resolution":
+                        resolution,
+
+                    "generation_mode":
+                        generation_mode,
+
+                    "num_images":
+                        len(output)
+
+                })
+
+
+            # ------------------------------------------------
+            # FAILED
+            # ------------------------------------------------
+
+            if status in [
+                "failed",
+                "cancelled",
+                "canceled",
+                "error"
+            ]:
+
+                print(
+                    "FASHN FAILED:",
+                    status_data
+                )
+
+
+                return jsonify({
+
+                    "success":
+                        False,
+
+                    "error":
+                        "FASHN try-on failed.",
+
+                    "details":
+                        status_data.get(
+                            "error",
+                            status_data
+                        ),
+
+                    "prediction_id":
+                        prediction_id
+
+                }), 502
+
+
+        # ----------------------------------------------------
+        # TIMEOUT
+        # ----------------------------------------------------
 
         return jsonify({
 
             "success":
-                True,
+                False,
 
-            "image_url":
-                image_url,
+            "error":
+                "FASHN prediction timed out.",
 
-            "provider":
-                "openai",
+            "prediction_id":
+                prediction_id
 
-            "model":
-                "gpt-image-2",
-
-            "hairstyle":
-                hairstyle,
-
-            "background":
-                background,
-
-            "bridal_pleats":
-                True
-
-        })
+        }), 504
 
 
     # ========================================================
-    # TIMEOUT
+    # REQUEST ERROR
     # ========================================================
 
     except requests.exceptions.Timeout:
 
         print(
-            "❌ OPENAI TIMEOUT"
+            "❌ FASHN REQUEST TIMEOUT"
         )
 
         return jsonify({
@@ -1003,19 +930,15 @@ PRIORITY ORDER:
                 False,
 
             "error":
-                "OpenAI request timed out."
+                "FASHN request timed out."
 
         }), 504
 
 
-    # ========================================================
-    # NETWORK ERROR
-    # ========================================================
-
     except requests.exceptions.RequestException as e:
 
         print(
-            "❌ OPENAI NETWORK ERROR:",
+            "❌ FASHN NETWORK ERROR:",
             repr(e)
         )
 
@@ -1025,17 +948,13 @@ PRIORITY ORDER:
                 False,
 
             "error":
-                "Could not connect to OpenAI.",
+                "Could not connect to FASHN.",
 
             "details":
                 str(e)
 
         }), 502
 
-
-    # ========================================================
-    # GENERAL ERROR
-    # ========================================================
 
     except Exception as e:
 
@@ -1066,340 +985,14 @@ PRIORITY ORDER:
 def tryon():
 
     print(
-        "🔄 /api/tryon -> OpenAI"
+        "🔄 /api/tryon -> FASHN TRY-ON MAX"
     )
 
-    return openai_tryon()
+    return fashn_tryon()
 
 
 # ============================================================
-# OPTIONAL FASHN TRY-ON
-# ============================================================
-
-@app.route(
-    "/api/fashn-tryon",
-    methods=["POST"]
-)
-def fashn_tryon():
-
-    if not FASHN_API_KEY:
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "FASHN_API_KEY is not configured."
-
-        }), 500
-
-
-    model_file, garment_file = (
-        get_uploaded_files()
-    )
-
-
-    if model_file is None:
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "model_image is missing."
-
-        }), 400
-
-
-    if garment_file is None:
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "garment_image is missing."
-
-        }), 400
-
-
-    try:
-
-        model_data = (
-            model_file.read()
-        )
-
-        garment_data = (
-            garment_file.read()
-        )
-
-
-        model_image = (
-
-            "data:"
-            + (
-                model_file.content_type
-                or "image/jpeg"
-            )
-            + ";base64,"
-            + base64.b64encode(
-                model_data
-            ).decode("utf-8")
-
-        )
-
-
-        garment_image = (
-
-            "data:"
-            + (
-                garment_file.content_type
-                or "image/jpeg"
-            )
-            + ";base64,"
-            + base64.b64encode(
-                garment_data
-            ).decode("utf-8")
-
-        )
-
-
-        payload = {
-
-            "model_name":
-                "tryon-v1.6",
-
-            "inputs": {
-
-                "model_image":
-                    model_image,
-
-                "garment_image":
-                    garment_image,
-
-                "category":
-                    "auto",
-
-                "garment_photo_type":
-                    "auto",
-
-                "mode":
-                    "balanced",
-
-                "num_samples":
-                    1,
-
-                "output_format":
-                    "jpeg"
-
-            }
-
-        }
-
-
-        response = requests.post(
-
-            f"{FASHN_URL}/run",
-
-            json=payload,
-
-            headers={
-
-                "Authorization":
-                    f"Bearer {FASHN_API_KEY}",
-
-                "Content-Type":
-                    "application/json"
-
-            },
-
-            timeout=60
-
-        )
-
-
-        if not response.ok:
-
-            return jsonify({
-
-                "success":
-                    False,
-
-                "error":
-                    "FASHN request failed.",
-
-                "details":
-                    response.text[:3000]
-
-            }), 502
-
-
-        run_data = (
-            response.json()
-        )
-
-
-        prediction_id = (
-            run_data.get("id")
-        )
-
-
-        if not prediction_id:
-
-            return jsonify({
-
-                "success":
-                    False,
-
-                "error":
-                    "FASHN returned no prediction ID.",
-
-                "response":
-                    run_data
-
-            }), 502
-
-
-        # ----------------------------------------------------
-        # POLL FASHN
-        # ----------------------------------------------------
-
-        for _ in range(60):
-
-            time.sleep(2)
-
-
-            status_response = requests.get(
-
-                f"{FASHN_URL}/status/{prediction_id}",
-
-                headers={
-
-                    "Authorization":
-                        f"Bearer {FASHN_API_KEY}"
-
-                },
-
-                timeout=30
-
-            )
-
-
-            status_data = (
-                status_response.json()
-            )
-
-
-            status = (
-                status_data.get("status")
-            )
-
-
-            print(
-                "FASHN STATUS:",
-                status
-            )
-
-
-            if status == "completed":
-
-                output = (
-                    status_data.get(
-                        "output",
-                        []
-                    )
-                )
-
-
-                if not output:
-
-                    return jsonify({
-
-                        "success":
-                            False,
-
-                        "error":
-                            "FASHN returned no output."
-
-                    }), 502
-
-
-                return jsonify({
-
-                    "success":
-                        True,
-
-                    "image_url":
-                        output[0],
-
-                    "provider":
-                        "fashn",
-
-                    "prediction_id":
-                        prediction_id
-
-                })
-
-
-            if status in [
-
-                "failed",
-                "cancelled",
-                "canceled",
-                "error"
-
-            ]:
-
-                return jsonify({
-
-                    "success":
-                        False,
-
-                    "error":
-                        "FASHN try-on failed.",
-
-                    "details":
-                        status_data.get(
-                            "error"
-                        )
-
-                }), 502
-
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                "FASHN prediction timed out."
-
-        }), 504
-
-
-    except Exception as e:
-
-        print(
-            "FASHN ERROR:",
-            repr(e)
-        )
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                str(e)
-
-        }), 500
-
-
-# ============================================================
-# 404 HANDLER
+# 404
 # ============================================================
 
 @app.errorhandler(404)
@@ -1426,12 +1019,10 @@ def not_found(error):
 if __name__ == "__main__":
 
     port = int(
-
         os.environ.get(
             "PORT",
             "8080"
         )
-
     )
 
 
