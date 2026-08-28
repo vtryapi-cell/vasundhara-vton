@@ -1,4 +1,4 @@
-FROM runpod/pytorch:2.8.0-py3.12-cuda12.8.1-devel-ubuntu24.04
+FROM runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2404-cluster
 
 WORKDIR /workspace
 
