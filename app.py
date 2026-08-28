@@ -52,6 +52,7 @@ def load_models():
 
     if DEVICE != "cuda":
         model_error = "GPU is required. Deploy this service with an NVIDIA GPU."
+        print(model_error, flush=True)
         return
 
     try:
@@ -217,15 +218,18 @@ def tryon():
         }), 400
 
     try:
-        seed_text = request.form.get("seed", "42")
+        # Fallback processing if parameters are sent inside JSON body or form data
+        data_source = request.form if request.form else (request.get_json(silent=True) or {})
+        
+        seed_text = data_source.get("seed", "42")
         try:
             seed = int(seed_text)
         except Exception:
             seed = 42
 
         # Keep compatibility with the existing website.
-        hairstyle = request.form.get("hairstyle", "Original")
-        background = request.form.get("background", "Original")
+        hairstyle = data_source.get("hairstyle", "Original")
+        background = data_source.get("background", "Original")
 
         print("========================================", flush=True)
         print("NEW OWN VTON REQUEST", flush=True)
@@ -279,14 +283,16 @@ def tryon():
 
 
 @app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        "success": False,
-        "error": "Flask 404",
-        "requested_path": request.path,
-    }), 404
+def not_found(e):
+    return jsonify({"success": False, "error": "Endpoint not found"}), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "8080"))
-    app.run(host="0.0.0.0", port=port, threaded=True)
+    # Binds server securely across cloud deployment environments
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
