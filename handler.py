@@ -26,7 +26,7 @@ HEIGHT = 1024
 MODEL_REPO = os.getenv("CATVTON_MODEL", "zhengchong/CatVTON")
 BASE_MODEL = os.getenv(
     "BASE_MODEL",
-    "runwayml/stable-diffusion-inpainting",
+    "booksforcharlie/stable-diffusion-inpainting",
 )
 
 STEPS = int(os.getenv("DEFAULT_STEPS", "30"))
