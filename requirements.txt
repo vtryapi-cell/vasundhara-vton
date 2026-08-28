@@ -1,26 +1,33 @@
+# Web Framework & Server
 Flask>=3.0,<4
 requests>=2.31,<3
 gunicorn>=22,<24
 Pillow>=10,<13
 
-torch==2.4.0
-torchvision==0.19.0
+# Core Deep Learning Infrastructure
+torch==2.4.0+cu121 --extra-index-url https://pytorch.org
+torchvision==0.19.0+cu121 --extra-index-url https://pytorch.org
 accelerate==0.31.0
-diffusers>=0.30.0
-matplotlib==3.9.1
+diffusers==0.30.3
+transformers==4.46.3
+huggingface_hub>=0.34.0,<2.0
+safetensors>=0.4.0
+peft>=0.17.0
+
+# Mathematical & Image Processing Libraries
 numpy==1.26.4
-opencv_python==4.10.0.84
+matplotlib==3.9.1
+opencv-python-headless==4.10.0.84
 PyYAML==6.0.1
 scipy==1.13.1
 setuptools>=70
 scikit-image==0.24.0
 tqdm==4.66.4
-transformers==4.46.3
-fvcore==0.1.5.post20221221
 cloudpickle==3.0.0
 omegaconf==2.3.0
-pycocotools==2.0.8
-peft>=0.17.0
-huggingface_hub>=0.34.0,<2.0
-safetensors>=0.4.0
 einops>=0.8.0
+
+# Critical Layout & Segmentation Dependencies for CatVTON Masker
+ninja
+fvcore==0.1.5.post20221221
+pycocotools==2.0.8
