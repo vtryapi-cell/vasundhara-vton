@@ -24,17 +24,33 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 WORKDIR /app
 
-# Install the pinned Python dependencies first.
-COPY requirements.txt .
-RUN python -m pip install --upgrade pip setuptools wheel && \
-    python -m pip install -r requirements.txt
+# Upgrade pip
+RUN python -m pip install --upgrade pip setuptools wheel
 
-# Bring in the official CatVTON source.
+# Install CUDA-enabled PyTorch FIRST.
+RUN python -m pip install \
+    torch==2.4.0 \
+    torchvision==0.19.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Install the remaining application dependencies.
+COPY requirements.txt .
+RUN python -m pip install -r requirements.txt
+
+# Make absolutely sure the CUDA PyTorch version remains installed.
+RUN python -m pip install \
+    torch==2.4.0 \
+    torchvision==0.19.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Verify PyTorch exists during image build.
+RUN python -c "import torch; print('TORCH VERSION:', torch.__version__); print('CUDA AVAILABLE:', torch.cuda.is_available()); print('CUDA VERSION:', torch.version.cuda)"
+
+# Bring in official CatVTON source.
 RUN git clone --depth 1 https://github.com/Zheng-Chong/CatVTON.git /opt/CatVTON
 
 COPY app.py .
 
-# Keep the existing Vasundhara website files if they are present in the repo.
 COPY templates ./templates
 COPY static ./static
 
