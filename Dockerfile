@@ -1,48 +1,22 @@
-# Use an official NVIDIA CUDA runtime with development tools for compiling libraries
-FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
+FROM runpod/pytorch:2.8.0-py3.12-cuda12.8.1-devel-ubuntu24.04
 
-# Prevent interactive prompts during installation
-ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /workspace
+
 ENV PYTHONUNBUFFERED=1
+ENV HF_HOME=/workspace/huggingface
+ENV TRANSFORMERS_CACHE=/workspace/huggingface
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Set up system dependencies including git, python, and image handling tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-pip \
-    python3-dev \
-    git \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    build-essential \
-    && rm -rf /lib/apt/lists/*
+COPY requirements-serverless.txt /workspace/requirements-serverless.txt
 
-# Set python3 as the default python command
-RUN ln -s /usr/bin/python3 /usr/bin/python
+RUN pip install --no-cache-dir -r /workspace/requirements-serverless.txt
 
-# Create working directory for the CatVTON repository architecture
-WORKDIR /opt
+COPY handler.py /workspace/handler.py
 
-# Clone the CatVTON framework repository
-RUN git clone https://github.com /opt/CatVTON
+COPY CatVTON /workspace/CatVTON
 
-# Set environment variables for app.py mapping
-ENV CATVTON_ROOT=/opt/CatVTON
+WORKDIR /workspace/CatVTON
 
-# Set main app working directory
-WORKDIR /app
+ENV PYTHONPATH=/workspace/CatVTON
 
-# Copy requirement files first to cache Docker layers optimally
-COPY requirements.txt .
-
-# Install Python requirements targeting correct CUDA wheels
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements.txt
-
-# Copy the rest of your application code
-COPY . .
-
-# Expose your Flask port
-EXPOSE 5000
-
-# Start Gunicorn server with exactly 1 worker to manage GPU memory lock safely
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "2", "--timeout", "120", "app:app"]
+CMD ["python", "/workspace/handler.py"]
