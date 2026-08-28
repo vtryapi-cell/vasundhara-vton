@@ -11,9 +11,9 @@ COPY requirements-serverless.txt /workspace/requirements-serverless.txt
 
 RUN pip install --no-cache-dir -r /workspace/requirements-serverless.txt
 
-COPY handler.py /workspace/handler.py
+RUN git clone --depth 1 https://github.com/Zheng-Chong/CatVTON.git /workspace/CatVTON
 
-COPY CatVTON /workspace/CatVTON
+COPY handler.py /workspace/handler.py
 
 WORKDIR /workspace/CatVTON
 
