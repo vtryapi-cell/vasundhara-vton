@@ -24,29 +24,22 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 WORKDIR /app
 
-# Upgrade pip
 RUN python -m pip install --upgrade pip setuptools wheel
 
-# Install CUDA-enabled PyTorch FIRST.
+# CUDA-enabled PyTorch
 RUN python -m pip install \
     torch==2.4.0 \
     torchvision==0.19.0 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install the remaining application dependencies.
+# Application dependencies
 COPY requirements.txt .
 RUN python -m pip install -r requirements.txt
 
-# Make absolutely sure the CUDA PyTorch version remains installed.
-RUN python -m pip install \
-    torch==2.4.0 \
-    torchvision==0.19.0 \
-    --index-url https://download.pytorch.org/whl/cu121
+# Verify torch is installed during the build
+RUN python -c "import torch; print('TORCH:', torch.__version__); print('CUDA:', torch.version.cuda)"
 
-# Verify PyTorch exists during image build.
-RUN python -c "import torch; print('TORCH VERSION:', torch.__version__); print('CUDA AVAILABLE:', torch.cuda.is_available()); print('CUDA VERSION:', torch.version.cuda)"
-
-# Bring in official CatVTON source.
+# CatVTON
 RUN git clone --depth 1 https://github.com/Zheng-Chong/CatVTON.git /opt/CatVTON
 
 COPY app.py .
