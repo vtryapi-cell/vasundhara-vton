@@ -1,83 +1,48 @@
 import os
-import io
 import base64
+import io
 import tempfile
-import traceback
 
 import runpod
 import torch
+
 from PIL import Image
-from huggingface_hub import snapshot_download
 from diffusers.image_processor import VaeImageProcessor
+from huggingface_hub import snapshot_download
 
 from model.pipeline import CatVTONPipeline
 from model.cloth_masker import AutoMasker
-from utils import resize_and_crop, resize_and_padding
+from utils import resize_and_crop, resize_and_padding, init_weight_dtype
 
 
 # ---------------------------------------------------------
-# Configuration
+# CONFIG
 # ---------------------------------------------------------
 
 DEVICE = "cuda"
 WIDTH = 768
 HEIGHT = 1024
 
-MODEL_REPO = os.getenv("CATVTON_MODEL", "zhengchong/CatVTON")
-BASE_MODEL = os.getenv(
-    "BASE_MODEL",
-    "booksforcharlie/stable-diffusion-inpainting",
-)
+MODEL_REPO = "zhengchong/CatVTON"
 
-STEPS = int(os.getenv("DEFAULT_STEPS", "30"))
-GUIDANCE = float(os.getenv("DEFAULT_GUIDANCE", "2.5"))
+print("Loading CatVTON...")
 
+# Download CatVTON checkpoint
+REPO_PATH = snapshot_download(repo_id=MODEL_REPO)
 
-print("========================================")
-print("VASUNDHARA CATVTON SERVERLESS WORKER")
-print("========================================")
-print("PyTorch:", torch.__version__)
-print("CUDA:", torch.cuda.is_available())
-
-if not torch.cuda.is_available():
-    raise RuntimeError("CUDA GPU is required.")
-
-print("GPU:", torch.cuda.get_device_name(0))
-
-
-# ---------------------------------------------------------
-# Download / locate CatVTON checkpoint
-# ---------------------------------------------------------
-
-print("Loading CatVTON checkpoint...")
-
-repo_path = snapshot_download(
-    repo_id=MODEL_REPO
-)
-
-print("CatVTON checkpoint:", repo_path)
-
-
-# ---------------------------------------------------------
-# Load CatVTON pipeline
-# ---------------------------------------------------------
-
+# Load pipeline
 pipeline = CatVTONPipeline(
-    base_ckpt=BASE_MODEL,
-    attn_ckpt=repo_path,
+    base_ckpt="booksforcharlie/stable-diffusion-inpainting",
+    attn_ckpt=REPO_PATH,
     attn_ckpt_version="mix",
     weight_dtype=torch.bfloat16,
     use_tf32=True,
     device=DEVICE,
 )
 
-print("CatVTON pipeline loaded.")
+pipeline.to(DEVICE)
 
-
-# ---------------------------------------------------------
-# Automatic mask generator
-# ---------------------------------------------------------
-
+# Mask processor
 mask_processor = VaeImageProcessor(
     vae_scale_factor=8,
     do_normalize=False,
@@ -85,18 +50,18 @@ mask_processor = VaeImageProcessor(
     do_convert_grayscale=True,
 )
 
+# Automatic human/clothing mask
 automasker = AutoMasker(
-    densepose_ckpt=os.path.join(repo_path, "DensePose"),
-    schp_ckpt=os.path.join(repo_path, "SCHP"),
+    densepose_ckpt=os.path.join(REPO_PATH, "DensePose"),
+    schp_ckpt=os.path.join(REPO_PATH, "SCHP"),
     device=DEVICE,
 )
 
-print("AutoMasker loaded.")
-print("Worker ready.")
+print("CatVTON loaded successfully.")
 
 
 # ---------------------------------------------------------
-# Helpers
+# IMAGE HELPERS
 # ---------------------------------------------------------
 
 def decode_image(value):
@@ -107,192 +72,175 @@ def decode_image(value):
     """
 
     if not value:
-        raise ValueError("Image data is missing.")
+        raise ValueError("Image is missing")
 
     if value.startswith("data:"):
         value = value.split(",", 1)[1]
 
-    raw = base64.b64decode(value)
+    image_bytes = base64.b64decode(value)
 
-    return Image.open(io.BytesIO(raw)).convert("RGB")
+    return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
 
 def encode_image(image):
     buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=95)
-    return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
+    image.save(buffer, format="PNG")
 
-def get_seed(value):
-    if value is None:
-        return None
-
-    try:
-        value = int(value)
-    except Exception:
-        return None
-
-    if value < 0:
-        return None
-
-    return value
+    return base64.b64encode(
+        buffer.getvalue()
+    ).decode("utf-8")
 
 
 # ---------------------------------------------------------
-# Main inference
+# TRY-ON
+# ---------------------------------------------------------
+
+def run_tryon(
+    person_image,
+    cloth_image,
+    cloth_type="overall",
+    steps=50,
+    guidance_scale=2.5,
+    seed=-1,
+):
+
+    person_image = resize_and_crop(
+        person_image,
+        (WIDTH, HEIGHT)
+    )
+
+    cloth_image = resize_and_padding(
+        cloth_image,
+        (WIDTH, HEIGHT)
+    )
+
+    # Generate automatic mask
+    mask = automasker(
+        person_image,
+        cloth_type
+    )["mask"]
+
+    mask = mask_processor.blur(
+        mask,
+        blur_factor=9
+    )
+
+    # Random generator
+    generator = None
+
+    if seed is not None and int(seed) >= 0:
+        generator = torch.Generator(
+            device=DEVICE
+        ).manual_seed(int(seed))
+
+    # CatVTON inference
+    result = pipeline(
+        image=person_image,
+        condition_image=cloth_image,
+        mask=mask,
+        num_inference_steps=int(steps),
+        guidance_scale=float(guidance_scale),
+        generator=generator,
+    )[0]
+
+    return result
+
+
+# ---------------------------------------------------------
+# RUNPOD HANDLER
 # ---------------------------------------------------------
 
 def handler(job):
 
-    job_input = job.get("input", {})
-
     try:
 
-        person_data = job_input.get("person_image")
-        cloth_data = job_input.get("cloth_image")
+        job_input = job.get("input", {})
 
-        if not person_data:
-            raise ValueError("person_image is required.")
+        person_value = (
+            job_input.get("model_image")
+            or job_input.get("person_image")
+        )
 
-        if not cloth_data:
-            raise ValueError("cloth_image is required.")
+        cloth_value = (
+            job_input.get("garment_image")
+            or job_input.get("cloth_image")
+        )
+
+        if not person_value:
+            raise ValueError(
+                "model_image/person_image is required"
+            )
+
+        if not cloth_value:
+            raise ValueError(
+                "garment_image/cloth_image is required"
+            )
 
         cloth_type = job_input.get(
             "cloth_type",
-            "upper"
+            "overall"
         )
 
-        if cloth_type not in [
-            "upper",
-            "lower",
-            "overall",
-        ]:
-            cloth_type = "upper"
-
-        steps = int(
-            job_input.get(
-                "steps",
-                STEPS
-            )
+        steps = job_input.get(
+            "steps",
+            50
         )
 
-        guidance = float(
-            job_input.get(
-                "guidance_scale",
-                GUIDANCE
-            )
+        guidance_scale = job_input.get(
+            "guidance_scale",
+            2.5
         )
 
-        seed = get_seed(
-            job_input.get("seed", -1)
+        seed = job_input.get(
+            "seed",
+            -1
         )
 
-        print("Starting VTON job...")
-        print("Cloth type:", cloth_type)
-        print("Steps:", steps)
-        print("Guidance:", guidance)
-        print("Seed:", seed)
+        print("Decoding input images...")
 
-        # -------------------------------------------------
-        # Decode images
-        # -------------------------------------------------
-
-        person_image = decode_image(person_data)
-        cloth_image = decode_image(cloth_data)
-
-        # -------------------------------------------------
-        # Resize
-        # -------------------------------------------------
-
-        person_image = resize_and_crop(
-            person_image,
-            (WIDTH, HEIGHT)
+        person_image = decode_image(
+            person_value
         )
 
-        cloth_image = resize_and_padding(
-            cloth_image,
-            (WIDTH, HEIGHT)
+        cloth_image = decode_image(
+            cloth_value
         )
-
-        # -------------------------------------------------
-        # Automatic clothing mask
-        # -------------------------------------------------
-
-        print("Generating clothing mask...")
-
-        mask = automasker(
-            person_image,
-            cloth_type
-        )["mask"]
-
-        mask = mask_processor.blur(
-            mask,
-            blur_factor=9
-        )
-
-        # -------------------------------------------------
-        # Random generator
-        # -------------------------------------------------
-
-        generator = None
-
-        if seed is not None:
-            generator = torch.Generator(
-                device=DEVICE
-            ).manual_seed(seed)
-
-        # -------------------------------------------------
-        # CatVTON inference
-        # -------------------------------------------------
 
         print("Running CatVTON...")
 
-        with torch.inference_mode():
+        result = run_tryon(
+            person_image=person_image,
+            cloth_image=cloth_image,
+            cloth_type=cloth_type,
+            steps=steps,
+            guidance_scale=guidance_scale,
+            seed=seed,
+        )
 
-            result = pipeline(
-                image=person_image,
-                condition_image=cloth_image,
-                mask=mask,
-                num_inference_steps=steps,
-                guidance_scale=guidance,
-                generator=generator,
-            )[0]
+        result_base64 = encode_image(result)
 
-        # -------------------------------------------------
-        # Encode result
-        # -------------------------------------------------
-
-        result_b64 = encode_image(result)
-
-        print("VTON completed.")
+        print("Try-on completed.")
 
         return {
-            "status": "success",
-            "image": result_b64,
-            "format": "jpeg",
-            "width": result.width,
-            "height": result.height,
+            "success": True,
+            "model": "CatVTON",
+            "provider": "vasundhara",
+            "image_base64": result_base64,
         }
 
-    except Exception as exc:
+    except Exception as e:
 
-        print("VTON ERROR:")
-        traceback.print_exc()
+        print("ERROR:", repr(e))
 
         return {
-            "status": "error",
-            "message": str(exc),
+            "success": False,
+            "error": str(e),
         }
-
-    finally:
-
-        # Release temporary CUDA memory between jobs.
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
 
 # ---------------------------------------------------------
-# RunPod Serverless
+# START SERVERLESS WORKER
 # ---------------------------------------------------------
 
 runpod.serverless.start({
