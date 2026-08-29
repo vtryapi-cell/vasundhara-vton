@@ -9,7 +9,7 @@ ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 COPY requirements-serverless.txt /workspace/requirements-serverless.txt
 
-RUN pip install --no-cache-dir -r /workspace/requirements-serverless.txt
+RUN pip install --no-cache-dir --ignore-installed -r /workspace/requirements-serverless.txt
 
 RUN git clone --depth 1 https://github.com/Zheng-Chong/CatVTON.git /workspace/CatVTON
 
