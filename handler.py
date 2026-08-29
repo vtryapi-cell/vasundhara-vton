@@ -2,9 +2,11 @@ import os
 import sys
 import io
 import base64
+import traceback
 
 import runpod
 import torch
+
 from PIL import Image
 
 # ============================================================
@@ -13,12 +15,11 @@ from PIL import Image
 
 CATVTON_ROOT = os.environ.get(
     "CATVTON_ROOT",
-    "/opt/CatVTON"
+    "/workspace/CatVTON"
 )
 
 if CATVTON_ROOT not in sys.path:
     sys.path.insert(0, CATVTON_ROOT)
-
 
 # ============================================================
 # CATVTON IMPORTS
@@ -29,12 +30,12 @@ from huggingface_hub import snapshot_download
 
 from model.pipeline import CatVTONPipeline
 from model.cloth_masker import AutoMasker
+
 from utils import (
     resize_and_crop,
     resize_and_padding,
     init_weight_dtype,
 )
-
 
 # ============================================================
 # CONFIGURATION
@@ -46,12 +47,10 @@ WIDTH = 768
 HEIGHT = 1024
 
 MODEL_REPO = "zhengchong/CatVTON"
-
 BASE_MODEL = "booksforcharlie/stable-diffusion-inpainting"
 
 DEFAULT_STEPS = 40
 DEFAULT_GUIDANCE = 2.5
-
 
 # ============================================================
 # GPU CHECK
@@ -60,12 +59,13 @@ DEFAULT_GUIDANCE = 2.5
 if not torch.cuda.is_available():
     raise RuntimeError(
         "CUDA GPU is required. "
-        "This handler must run on a RunPod GPU."
+        "This worker must run on a RunPod NVIDIA GPU."
     )
 
-print("========================================")
-print("VASUNDHARA CATVTON")
-print("========================================")
+print("=" * 60, flush=True)
+print("VASUNDHARA FREE VTON")
+print("CATVTON SERVERLESS WORKER")
+print("=" * 60, flush=True)
 
 print(
     "GPU:",
@@ -73,26 +73,38 @@ print(
     flush=True
 )
 
+print(
+    "CUDA:",
+    torch.version.cuda,
+    flush=True
+)
+
+print(
+    "PyTorch:",
+    torch.__version__,
+    flush=True
+)
 
 # ============================================================
-# DOWNLOAD MODEL
+# DOWNLOAD CATVTON MODEL
 # ============================================================
 
-print("Downloading CatVTON model...", flush=True)
+print("=" * 60, flush=True)
+print("Downloading/loading CatVTON model...", flush=True)
+print("=" * 60, flush=True)
 
 REPO_PATH = snapshot_download(
     repo_id=MODEL_REPO
 )
 
 print(
-    "CatVTON model:",
+    "CatVTON model path:",
     REPO_PATH,
     flush=True
 )
 
-
 # ============================================================
-# LOAD PIPELINE
+# LOAD CATVTON PIPELINE
 # ============================================================
 
 print("Loading CatVTON pipeline...", flush=True)
@@ -108,8 +120,7 @@ pipeline = CatVTONPipeline(
     device=DEVICE,
 )
 
-print("Pipeline loaded.", flush=True)
-
+print("CatVTON pipeline loaded.", flush=True)
 
 # ============================================================
 # MASK PROCESSOR
@@ -121,7 +132,6 @@ mask_processor = VaeImageProcessor(
     do_binarize=True,
     do_convert_grayscale=True,
 )
-
 
 # ============================================================
 # AUTOMASKER
@@ -141,10 +151,9 @@ automasker = AutoMasker(
     device=DEVICE,
 )
 
-print("========================================")
-print("CATVTON READY")
-print("========================================", flush=True)
-
+print("=" * 60, flush=True)
+print("VASUNDHARA CATVTON READY")
+print("=" * 60, flush=True)
 
 # ============================================================
 # IMAGE DECODING
@@ -153,32 +162,29 @@ print("========================================", flush=True)
 def decode_image(value):
 
     if value is None:
-        raise ValueError(
-            "Image value is missing."
-        )
+        raise ValueError("Image value is missing.")
 
-    # Already PIL image
+    # PIL image
     if isinstance(value, Image.Image):
         return value.convert("RGB")
 
-    # Data URI / base64
+    # Base64 / data URI
     if isinstance(value, str):
 
         if value.startswith("data:"):
-            value = value.split(
-                ",",
-                1
-            )[1]
+            try:
+                value = value.split(",", 1)[1]
+            except Exception:
+                raise ValueError("Invalid data URI image.")
 
         try:
+            raw = base64.b64decode(value)
 
-            raw = base64.b64decode(
-                value
-            )
-
-            return Image.open(
+            image = Image.open(
                 io.BytesIO(raw)
             ).convert("RGB")
+
+            return image
 
         except Exception as exc:
 
@@ -186,10 +192,23 @@ def decode_image(value):
                 f"Could not decode base64 image: {exc}"
             )
 
+    # Raw bytes
+    if isinstance(value, (bytes, bytearray)):
+
+        try:
+            return Image.open(
+                io.BytesIO(value)
+            ).convert("RGB")
+
+        except Exception as exc:
+
+            raise ValueError(
+                f"Could not decode image bytes: {exc}"
+            )
+
     raise ValueError(
         "Unsupported image format."
     )
-
 
 # ============================================================
 # IMAGE ENCODING
@@ -208,7 +227,6 @@ def encode_image(image):
         buffer.getvalue()
     ).decode("utf-8")
 
-
 # ============================================================
 # CATVTON TRY-ON
 # ============================================================
@@ -217,11 +235,12 @@ def run_tryon(
     person_image,
     garment_image,
     cloth_type="overall",
-    steps=40,
-    guidance_scale=2.5,
+    steps=DEFAULT_STEPS,
+    guidance_scale=DEFAULT_GUIDANCE,
     seed=-1,
 ):
 
+    print("=" * 60, flush=True)
     print("Preparing person image...", flush=True)
 
     person_image = resize_and_crop(
@@ -229,7 +248,10 @@ def run_tryon(
         (WIDTH, HEIGHT)
     )
 
-    print("Preparing garment image...", flush=True)
+    print(
+        "Preparing garment image...",
+        flush=True
+    )
 
     garment_image = resize_and_padding(
         garment_image,
@@ -237,7 +259,7 @@ def run_tryon(
     )
 
     # --------------------------------------------------------
-    # MASK
+    # CLOTHING MASK
     # --------------------------------------------------------
 
     print(
@@ -256,7 +278,7 @@ def run_tryon(
     )
 
     # --------------------------------------------------------
-    # SEED
+    # RANDOM SEED
     # --------------------------------------------------------
 
     generator = None
@@ -267,18 +289,22 @@ def run_tryon(
 
         if seed >= 0:
 
+            print(
+                f"Using seed: {seed}",
+                flush=True
+            )
+
             generator = torch.Generator(
                 device=DEVICE
             ).manual_seed(seed)
 
     # --------------------------------------------------------
-    # INFERENCE
+    # CATVTON INFERENCE
     # --------------------------------------------------------
 
-    print(
-        "Running CatVTON...",
-        flush=True
-    )
+    print("=" * 60, flush=True)
+    print("RUNNING CATVTON...", flush=True)
+    print("=" * 60, flush=True)
 
     result = pipeline(
         image=person_image,
@@ -300,7 +326,6 @@ def run_tryon(
 
     return result
 
-
 # ============================================================
 # RUNPOD HANDLER
 # ============================================================
@@ -314,18 +339,12 @@ def handler(job):
             {}
         )
 
-        print(
-            "========================================",
-            flush=True
-        )
-
-        print(
-            "NEW VTON REQUEST",
-            flush=True
-        )
+        print("=" * 60, flush=True)
+        print("NEW VASUNDHARA VTON REQUEST", flush=True)
+        print("=" * 60, flush=True)
 
         # ----------------------------------------------------
-        # PERSON
+        # PERSON IMAGE
         # ----------------------------------------------------
 
         person_value = (
@@ -342,7 +361,7 @@ def handler(job):
             )
 
         # ----------------------------------------------------
-        # GARMENT / SAREE
+        # GARMENT IMAGE
         # ----------------------------------------------------
 
         garment_value = (
@@ -355,7 +374,7 @@ def handler(job):
         if not garment_value:
 
             raise ValueError(
-                "Saree/garment image is required. "
+                "Garment image is required. "
                 "Use garment_image or cloth_image."
             )
 
@@ -384,7 +403,7 @@ def handler(job):
         )
 
         # ----------------------------------------------------
-        # DECODE
+        # DECODE PERSON
         # ----------------------------------------------------
 
         print(
@@ -396,8 +415,12 @@ def handler(job):
             person_value
         )
 
+        # ----------------------------------------------------
+        # DECODE GARMENT
+        # ----------------------------------------------------
+
         print(
-            "Decoding saree image...",
+            "Decoding garment image...",
             flush=True
         )
 
@@ -419,22 +442,21 @@ def handler(job):
         )
 
         # ----------------------------------------------------
-        # ENCODE
+        # ENCODE RESULT
         # ----------------------------------------------------
+
+        print(
+            "Encoding result...",
+            flush=True
+        )
 
         result_base64 = encode_image(
             result
         )
 
-        print(
-            "VTON SUCCESS",
-            flush=True
-        )
-
-        print(
-            "========================================",
-            flush=True
-        )
+        print("=" * 60, flush=True)
+        print("VTON SUCCESS", flush=True)
+        print("=" * 60, flush=True)
 
         return {
             "success": True,
@@ -454,16 +476,25 @@ def handler(job):
 
         torch.cuda.empty_cache()
 
+        print(
+            "GPU OUT OF MEMORY",
+            flush=True
+        )
+
         return {
             "success": False,
             "error": (
                 "GPU out of memory. "
-                "Use a larger RunPod GPU or reduce "
-                "the image resolution."
+                "Reduce resolution or use a larger GPU."
             ),
         }
 
     except Exception as exc:
+
+        print(
+            "=" * 60,
+            flush=True
+        )
 
         print(
             "VTON ERROR:",
@@ -471,11 +502,17 @@ def handler(job):
             flush=True
         )
 
+        traceback.print_exc()
+
+        print(
+            "=" * 60,
+            flush=True
+        )
+
         return {
             "success": False,
             "error": str(exc),
         }
-
 
 # ============================================================
 # START RUNPOD SERVERLESS
