@@ -4,10 +4,15 @@ import io
 import base64
 import traceback
 
-import runpod
-import torch
+# ============================================================
+# STARTUP DIAGNOSTICS
+# ============================================================
 
-from PIL import Image
+print("=" * 70, flush=True)
+print("VASUNDHARA VTON SERVERLESS WORKER STARTING", flush=True)
+print("=" * 70, flush=True)
+
+print("Python:", sys.version, flush=True)
 
 # ============================================================
 # CATVTON PATH
@@ -15,27 +20,92 @@ from PIL import Image
 
 CATVTON_ROOT = os.environ.get(
     "CATVTON_ROOT",
-    "/workspace/CatVTON"
+    "/workspace/CatVTON",
 )
 
 if CATVTON_ROOT not in sys.path:
     sys.path.insert(0, CATVTON_ROOT)
 
+print("CATVTON_ROOT:", CATVTON_ROOT, flush=True)
+print("Python path configured.", flush=True)
+
+# ============================================================
+# IMPORT TORCH
+# ============================================================
+
+try:
+    import torch
+
+    print("PyTorch:", torch.__version__, flush=True)
+    print("Torch CUDA:", torch.version.cuda, flush=True)
+    print(
+        "CUDA available:",
+        torch.cuda.is_available(),
+        flush=True,
+    )
+
+except Exception:
+    print("FAILED TO IMPORT PYTORCH", flush=True)
+    traceback.print_exc()
+    raise
+
+# ============================================================
+# CUDA CHECK
+# ============================================================
+
+if not torch.cuda.is_available():
+    raise RuntimeError(
+        "CUDA GPU is required. "
+        "RunPod worker does not have a usable NVIDIA GPU."
+    )
+
+print(
+    "GPU:",
+    torch.cuda.get_device_name(0),
+    flush=True,
+)
+
+# ============================================================
+# OTHER IMPORTS
+# ============================================================
+
+try:
+    import runpod
+
+    from PIL import Image
+
+    from diffusers.image_processor import VaeImageProcessor
+    from huggingface_hub import snapshot_download
+
+    print("Basic imports: OK", flush=True)
+
+except Exception:
+    print("FAILED BASIC IMPORTS", flush=True)
+    traceback.print_exc()
+    raise
+
 # ============================================================
 # CATVTON IMPORTS
 # ============================================================
 
-from diffusers.image_processor import VaeImageProcessor
-from huggingface_hub import snapshot_download
+try:
+    print("Importing CatVTON...", flush=True)
 
-from model.pipeline import CatVTONPipeline
-from model.cloth_masker import AutoMasker
+    from model.pipeline import CatVTONPipeline
+    from model.cloth_masker import AutoMasker
 
-from utils import (
-    resize_and_crop,
-    resize_and_padding,
-    init_weight_dtype,
-)
+    from utils import (
+        resize_and_crop,
+        resize_and_padding,
+        init_weight_dtype,
+    )
+
+    print("CatVTON imports: OK", flush=True)
+
+except Exception:
+    print("FAILED CATVTON IMPORTS", flush=True)
+    traceback.print_exc()
+    raise
 
 # ============================================================
 # CONFIGURATION
@@ -53,107 +123,196 @@ DEFAULT_STEPS = 40
 DEFAULT_GUIDANCE = 2.5
 
 # ============================================================
-# GPU CHECK
+# MODEL VARIABLES
 # ============================================================
 
-if not torch.cuda.is_available():
-    raise RuntimeError(
-        "CUDA GPU is required. "
-        "This worker must run on a RunPod NVIDIA GPU."
+pipeline = None
+automasker = None
+mask_processor = None
+
+
+# ============================================================
+# LOAD MODELS
+# ============================================================
+
+def load_models():
+
+    global pipeline
+    global automasker
+    global mask_processor
+
+    print("=" * 70, flush=True)
+    print("LOADING CATVTON MODELS", flush=True)
+    print("=" * 70, flush=True)
+
+    # --------------------------------------------------------
+    # Download CatVTON checkpoint
+    # --------------------------------------------------------
+
+    print(
+        "Downloading/loading:",
+        MODEL_REPO,
+        flush=True,
     )
 
-print("=" * 60, flush=True)
-print("VASUNDHARA FREE VTON")
-print("CATVTON SERVERLESS WORKER")
-print("=" * 60, flush=True)
+    repo_path = snapshot_download(
+        repo_id=MODEL_REPO,
+    )
 
-print(
-    "GPU:",
-    torch.cuda.get_device_name(0),
-    flush=True
-)
+    print(
+        "CatVTON checkpoint:",
+        repo_path,
+        flush=True,
+    )
 
-print(
-    "CUDA:",
-    torch.version.cuda,
-    flush=True
-)
+    # --------------------------------------------------------
+    # Verify required checkpoint directories
+    # --------------------------------------------------------
 
-print(
-    "PyTorch:",
-    torch.__version__,
-    flush=True
-)
-
-# ============================================================
-# DOWNLOAD CATVTON MODEL
-# ============================================================
-
-print("=" * 60, flush=True)
-print("Downloading/loading CatVTON model...", flush=True)
-print("=" * 60, flush=True)
-
-REPO_PATH = snapshot_download(
-    repo_id=MODEL_REPO
-)
-
-print(
-    "CatVTON model path:",
-    REPO_PATH,
-    flush=True
-)
-
-# ============================================================
-# LOAD CATVTON PIPELINE
-# ============================================================
-
-print("Loading CatVTON pipeline...", flush=True)
-
-weight_dtype = init_weight_dtype("bf16")
-
-pipeline = CatVTONPipeline(
-    base_ckpt=BASE_MODEL,
-    attn_ckpt=REPO_PATH,
-    attn_ckpt_version="mix",
-    weight_dtype=weight_dtype,
-    use_tf32=True,
-    device=DEVICE,
-)
-
-print("CatVTON pipeline loaded.", flush=True)
-
-# ============================================================
-# MASK PROCESSOR
-# ============================================================
-
-mask_processor = VaeImageProcessor(
-    vae_scale_factor=8,
-    do_normalize=False,
-    do_binarize=True,
-    do_convert_grayscale=True,
-)
-
-# ============================================================
-# AUTOMASKER
-# ============================================================
-
-print("Loading AutoMasker...", flush=True)
-
-automasker = AutoMasker(
-    densepose_ckpt=os.path.join(
-        REPO_PATH,
+    densepose_path = os.path.join(
+        repo_path,
         "DensePose",
-    ),
-    schp_ckpt=os.path.join(
-        REPO_PATH,
-        "SCHP",
-    ),
-    device=DEVICE,
-)
+    )
 
-print("=" * 60, flush=True)
-print("VASUNDHARA CATVTON READY")
-print("=" * 60, flush=True)
+    schp_path = os.path.join(
+        repo_path,
+        "SCHP",
+    )
+
+    print(
+        "DensePose path:",
+        densepose_path,
+        flush=True,
+    )
+
+    print(
+        "SCHP path:",
+        schp_path,
+        flush=True,
+    )
+
+    if not os.path.isdir(densepose_path):
+        raise FileNotFoundError(
+            f"DensePose checkpoint directory not found: "
+            f"{densepose_path}"
+        )
+
+    if not os.path.isdir(schp_path):
+        raise FileNotFoundError(
+            f"SCHP checkpoint directory not found: "
+            f"{schp_path}"
+        )
+
+    # --------------------------------------------------------
+    # Weight type
+    # --------------------------------------------------------
+
+    print(
+        "Initializing BF16 weight dtype...",
+        flush=True,
+    )
+
+    weight_dtype = init_weight_dtype(
+        "bf16"
+    )
+
+    print(
+        "Weight dtype:",
+        weight_dtype,
+        flush=True,
+    )
+
+    # --------------------------------------------------------
+    # CatVTON pipeline
+    # --------------------------------------------------------
+
+    print(
+        "Loading CatVTON pipeline...",
+        flush=True,
+    )
+
+    pipeline = CatVTONPipeline(
+        base_ckpt=BASE_MODEL,
+        attn_ckpt=repo_path,
+        attn_ckpt_version="mix",
+        weight_dtype=weight_dtype,
+        use_tf32=True,
+        device=DEVICE,
+    )
+
+    print(
+        "CatVTON pipeline loaded successfully.",
+        flush=True,
+    )
+
+    # --------------------------------------------------------
+    # VAE mask processor
+    # --------------------------------------------------------
+
+    mask_processor = VaeImageProcessor(
+        vae_scale_factor=8,
+        do_normalize=False,
+        do_binarize=True,
+        do_convert_grayscale=True,
+    )
+
+    print(
+        "Mask processor loaded.",
+        flush=True,
+    )
+
+    # --------------------------------------------------------
+    # AutoMasker
+    # --------------------------------------------------------
+
+    print(
+        "Loading AutoMasker...",
+        flush=True,
+    )
+
+    automasker = AutoMasker(
+        densepose_ckpt=densepose_path,
+        schp_ckpt=schp_path,
+        device=DEVICE,
+    )
+
+    print(
+        "AutoMasker loaded successfully.",
+        flush=True,
+    )
+
+    # --------------------------------------------------------
+    # GPU memory
+    # --------------------------------------------------------
+
+    try:
+        allocated = (
+            torch.cuda.memory_allocated(0)
+            / 1024**3
+        )
+
+        reserved = (
+            torch.cuda.memory_reserved(0)
+            / 1024**3
+        )
+
+        print(
+            f"GPU memory allocated: {allocated:.2f} GB",
+            flush=True,
+        )
+
+        print(
+            f"GPU memory reserved: {reserved:.2f} GB",
+            flush=True,
+        )
+
+    except Exception:
+        traceback.print_exc()
+
+    print("=" * 70, flush=True)
+    print("VASUNDHARA CATVTON READY", flush=True)
+    print("=" * 70, flush=True)
+
 
 # ============================================================
 # IMAGE DECODING
@@ -162,40 +321,64 @@ print("=" * 60, flush=True)
 def decode_image(value):
 
     if value is None:
-        raise ValueError("Image value is missing.")
+        raise ValueError(
+            "Image value is missing."
+        )
 
-    # PIL image
+    # --------------------------------------------------------
+    # PIL
+    # --------------------------------------------------------
+
     if isinstance(value, Image.Image):
         return value.convert("RGB")
 
-    # Base64 / data URI
+    # --------------------------------------------------------
+    # Base64 / Data URI
+    # --------------------------------------------------------
+
     if isinstance(value, str):
 
         if value.startswith("data:"):
+
             try:
-                value = value.split(",", 1)[1]
-            except Exception:
-                raise ValueError("Invalid data URI image.")
+                value = value.split(
+                    ",",
+                    1,
+                )[1]
+
+            except Exception as exc:
+                raise ValueError(
+                    "Invalid data URI image."
+                ) from exc
 
         try:
-            raw = base64.b64decode(value)
 
-            image = Image.open(
+            raw = base64.b64decode(
+                value,
+                validate=True,
+            )
+
+            return Image.open(
                 io.BytesIO(raw)
             ).convert("RGB")
-
-            return image
 
         except Exception as exc:
 
             raise ValueError(
                 f"Could not decode base64 image: {exc}"
-            )
+            ) from exc
 
+    # --------------------------------------------------------
     # Raw bytes
-    if isinstance(value, (bytes, bytearray)):
+    # --------------------------------------------------------
+
+    if isinstance(
+        value,
+        (bytes, bytearray),
+    ):
 
         try:
+
             return Image.open(
                 io.BytesIO(value)
             ).convert("RGB")
@@ -204,11 +387,12 @@ def decode_image(value):
 
             raise ValueError(
                 f"Could not decode image bytes: {exc}"
-            )
+            ) from exc
 
     raise ValueError(
         "Unsupported image format."
     )
+
 
 # ============================================================
 # IMAGE ENCODING
@@ -220,12 +404,13 @@ def encode_image(image):
 
     image.save(
         buffer,
-        format="PNG"
+        format="PNG",
     )
 
     return base64.b64encode(
         buffer.getvalue()
     ).decode("utf-8")
+
 
 # ============================================================
 # CATVTON TRY-ON
@@ -240,45 +425,78 @@ def run_tryon(
     seed=-1,
 ):
 
-    print("=" * 60, flush=True)
-    print("Preparing person image...", flush=True)
+    if pipeline is None:
+        raise RuntimeError(
+            "CatVTON pipeline is not loaded."
+        )
+
+    if automasker is None:
+        raise RuntimeError(
+            "AutoMasker is not loaded."
+        )
+
+    # --------------------------------------------------------
+    # Person
+    # --------------------------------------------------------
+
+    print(
+        "Preparing person image...",
+        flush=True,
+    )
 
     person_image = resize_and_crop(
         person_image,
-        (WIDTH, HEIGHT)
+        (WIDTH, HEIGHT),
     )
+
+    # --------------------------------------------------------
+    # Garment
+    # --------------------------------------------------------
 
     print(
         "Preparing garment image...",
-        flush=True
+        flush=True,
     )
 
     garment_image = resize_and_padding(
         garment_image,
-        (WIDTH, HEIGHT)
+        (WIDTH, HEIGHT),
     )
 
     # --------------------------------------------------------
-    # CLOTHING MASK
+    # Clothing mask
     # --------------------------------------------------------
 
     print(
         "Generating clothing mask...",
-        flush=True
+        flush=True,
     )
 
-    mask = automasker(
+    print(
+        "Cloth type:",
+        cloth_type,
+        flush=True,
+    )
+
+    mask_result = automasker(
         person_image,
-        cloth_type
-    )["mask"]
+        cloth_type,
+    )
+
+    mask = mask_result["mask"]
 
     mask = mask_processor.blur(
         mask,
-        blur_factor=9
+        blur_factor=9,
+    )
+
+    print(
+        "Clothing mask generated.",
+        flush=True,
     )
 
     # --------------------------------------------------------
-    # RANDOM SEED
+    # Seed
     # --------------------------------------------------------
 
     generator = None
@@ -291,7 +509,7 @@ def run_tryon(
 
             print(
                 f"Using seed: {seed}",
-                flush=True
+                flush=True,
             )
 
             generator = torch.Generator(
@@ -299,21 +517,31 @@ def run_tryon(
             ).manual_seed(seed)
 
     # --------------------------------------------------------
-    # CATVTON INFERENCE
+    # Inference
     # --------------------------------------------------------
 
-    print("=" * 60, flush=True)
-    print("RUNNING CATVTON...", flush=True)
-    print("=" * 60, flush=True)
+    print("=" * 70, flush=True)
+    print("RUNNING CATVTON", flush=True)
+    print(
+        f"Resolution: {WIDTH}x{HEIGHT}",
+        flush=True,
+    )
+    print(
+        f"Steps: {steps}",
+        flush=True,
+    )
+    print(
+        f"Guidance: {guidance_scale}",
+        flush=True,
+    )
+    print("=" * 70, flush=True)
 
     result = pipeline(
         image=person_image,
         condition_image=garment_image,
         mask=mask,
         num_inference_steps=int(steps),
-        guidance_scale=float(
-            guidance_scale
-        ),
+        guidance_scale=float(guidance_scale),
         height=HEIGHT,
         width=WIDTH,
         generator=generator,
@@ -321,10 +549,11 @@ def run_tryon(
 
     print(
         "Generation complete.",
-        flush=True
+        flush=True,
     )
 
     return result
+
 
 # ============================================================
 # RUNPOD HANDLER
@@ -336,15 +565,18 @@ def handler(job):
 
         job_input = job.get(
             "input",
-            {}
+            {},
         )
 
-        print("=" * 60, flush=True)
-        print("NEW VASUNDHARA VTON REQUEST", flush=True)
-        print("=" * 60, flush=True)
+        print("=" * 70, flush=True)
+        print(
+            "NEW VASUNDHARA VTON REQUEST",
+            flush=True,
+        )
+        print("=" * 70, flush=True)
 
         # ----------------------------------------------------
-        # PERSON IMAGE
+        # Person image
         # ----------------------------------------------------
 
         person_value = (
@@ -361,7 +593,7 @@ def handler(job):
             )
 
         # ----------------------------------------------------
-        # GARMENT IMAGE
+        # Garment image
         # ----------------------------------------------------
 
         garment_value = (
@@ -379,36 +611,36 @@ def handler(job):
             )
 
         # ----------------------------------------------------
-        # OPTIONS
+        # Options
         # ----------------------------------------------------
 
         cloth_type = job_input.get(
             "cloth_type",
-            "overall"
+            "overall",
         )
 
         steps = job_input.get(
             "steps",
-            DEFAULT_STEPS
+            DEFAULT_STEPS,
         )
 
         guidance_scale = job_input.get(
             "guidance_scale",
-            DEFAULT_GUIDANCE
+            DEFAULT_GUIDANCE,
         )
 
         seed = job_input.get(
             "seed",
-            -1
+            -1,
         )
 
         # ----------------------------------------------------
-        # DECODE PERSON
+        # Decode person
         # ----------------------------------------------------
 
         print(
             "Decoding person image...",
-            flush=True
+            flush=True,
         )
 
         person_image = decode_image(
@@ -416,12 +648,12 @@ def handler(job):
         )
 
         # ----------------------------------------------------
-        # DECODE GARMENT
+        # Decode garment
         # ----------------------------------------------------
 
         print(
             "Decoding garment image...",
-            flush=True
+            flush=True,
         )
 
         garment_image = decode_image(
@@ -429,7 +661,7 @@ def handler(job):
         )
 
         # ----------------------------------------------------
-        # GENERATE
+        # Generate
         # ----------------------------------------------------
 
         result = run_tryon(
@@ -442,21 +674,24 @@ def handler(job):
         )
 
         # ----------------------------------------------------
-        # ENCODE RESULT
+        # Encode
         # ----------------------------------------------------
 
         print(
             "Encoding result...",
-            flush=True
+            flush=True,
         )
 
         result_base64 = encode_image(
             result
         )
 
-        print("=" * 60, flush=True)
-        print("VTON SUCCESS", flush=True)
-        print("=" * 60, flush=True)
+        print("=" * 70, flush=True)
+        print(
+            "VTON SUCCESS",
+            flush=True,
+        )
+        print("=" * 70, flush=True)
 
         return {
             "success": True,
@@ -478,8 +713,10 @@ def handler(job):
 
         print(
             "GPU OUT OF MEMORY",
-            flush=True
+            flush=True,
         )
+
+        traceback.print_exc()
 
         return {
             "success": False,
@@ -491,38 +728,62 @@ def handler(job):
 
     except Exception as exc:
 
-        print(
-            "=" * 60,
-            flush=True
-        )
-
+        print("=" * 70, flush=True)
         print(
             "VTON ERROR:",
             repr(exc),
-            flush=True
+            flush=True,
         )
 
         traceback.print_exc()
 
-        print(
-            "=" * 60,
-            flush=True
-        )
+        print("=" * 70, flush=True)
 
         return {
             "success": False,
             "error": str(exc),
         }
 
+
+# ============================================================
+# LOAD MODELS BEFORE SERVERLESS START
+# ============================================================
+
+try:
+
+    load_models()
+
+except Exception as exc:
+
+    print("=" * 70, flush=True)
+    print(
+        "FATAL STARTUP ERROR",
+        flush=True,
+    )
+    print(
+        repr(exc),
+        flush=True,
+    )
+    traceback.print_exc()
+    print("=" * 70, flush=True)
+
+    # Make the container exit with a clear error.
+    raise
+
+
 # ============================================================
 # START RUNPOD SERVERLESS
 # ============================================================
 
+print("=" * 70, flush=True)
 print(
     "Starting RunPod Serverless worker...",
-    flush=True
+    flush=True,
 )
+print("=" * 70, flush=True)
 
-runpod.serverless.start({
-    "handler": handler
-})
+runpod.serverless.start(
+    {
+        "handler": handler,
+    }
+)
