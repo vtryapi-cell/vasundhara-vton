@@ -3,20 +3,15 @@ FROM runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2404-cluster
 WORKDIR /workspace
 
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
 ENV HF_HOME=/workspace/huggingface
 ENV TRANSFORMERS_CACHE=/workspace/huggingface
-ENV HF_HUB_ENABLE_HF_TRANSFER=0
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-ENV CATVTON_ROOT=/workspace/CatVTON
-ENV PYTHONPATH=/workspace/CatVTON:/workspace
-
 # ---------------------------------------------------------
-# SYSTEM PACKAGES
+# System dependencies
 # ---------------------------------------------------------
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
     git \
     libgl1 \
     libglib2.0-0 \
@@ -26,56 +21,48 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------
-# APPLICATION DEPENDENCIES
+# Python dependencies
 # ---------------------------------------------------------
 
 COPY requirements-serverless.txt /workspace/requirements-serverless.txt
 
-RUN python -m pip install --no-cache-dir \
+# Remove potentially conflicting preinstalled packages
+RUN pip uninstall -y \
+    numpy \
+    opencv-python \
+    opencv-python-headless \
+    matplotlib \
+    2>/dev/null || true
+
+# Install exact NumPy first
+RUN pip install --no-cache-dir --force-reinstall \
+    numpy==1.26.4
+
+# Install application dependencies
+RUN pip install --no-cache-dir \
     -r /workspace/requirements-serverless.txt
 
-# ---------------------------------------------------------
-# FORCE NUMPY
-# ---------------------------------------------------------
-
-RUN python -m pip install --no-cache-dir --force-reinstall \
+# Make sure NumPy remains the required version
+RUN pip install --no-cache-dir --force-reinstall \
     numpy==1.26.4
 
 # ---------------------------------------------------------
-# CATVTON
+# Copy application
 # ---------------------------------------------------------
 
-RUN git clone --depth 1 \
-    https://github.com/Zheng-Chong/CatVTON.git \
-    /workspace/CatVTON
+COPY . /workspace
 
 # ---------------------------------------------------------
-# CATVTON DEPENDENCIES
+# Startup import test
 # ---------------------------------------------------------
 
-RUN python -m pip install --no-cache-dir \
-    fvcore==0.1.5.post20221221 \
-    cloudpickle==3.0.0 \
-    omegaconf==2.3.0 \
-    pycocotools==2.0.8 \
-    PyYAML==6.0.1 \
-    tqdm==4.66.4 \
-    "peft>=0.17.0"
+RUN python -c "import numpy; print('NUMPY:', numpy.__version__)"
+RUN python -c "import torch; print('TORCH:', torch.__version__)"
+RUN python -c "import diffusers; print('DIFFUSERS:', diffusers.__version__)"
+RUN python -c "import transformers; print('TRANSFORMERS:', transformers.__version__)"
 
 # ---------------------------------------------------------
-# COPY HANDLER
+# RunPod serverless worker
 # ---------------------------------------------------------
 
-COPY handler.py /workspace/handler.py
-
-# ---------------------------------------------------------
-# WORKING DIRECTORY
-# ---------------------------------------------------------
-
-WORKDIR /workspace
-
-# ---------------------------------------------------------
-# START SERVERLESS WORKER
-# ---------------------------------------------------------
-
-CMD ["python", "-u", "/workspace/handler.py"]
+CMD ["python", "handler.py"]
