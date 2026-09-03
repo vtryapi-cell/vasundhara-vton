@@ -1,9 +1,232 @@
-services:
-  - type: web
-    name: vasundhara-pro9
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    envVars:
-      - key: FASHN_API_KEY
-        sync: false
+import base64
+import io
+import os
+import traceback
+
+import runpod
+import torch
+from PIL import Image
+
+
+# =========================================================
+# VASUNDHARA VTON - V7
+# =========================================================
+
+MODEL = None
+
+
+def decode_image(value):
+    """
+    Accepts:
+      - base64 string
+      - data:image/...;base64,... string
+    Returns PIL Image.
+    """
+
+    if not value:
+        raise ValueError("Image data is missing")
+
+    if isinstance(value, dict):
+        value = value.get("data") or value.get("image")
+
+    if not isinstance(value, str):
+        raise ValueError("Image must be a base64 string")
+
+    if value.startswith("data:image"):
+        value = value.split(",", 1)[1]
+
+    try:
+        image_bytes = base64.b64decode(value)
+        image = Image.open(io.BytesIO(image_bytes))
+        return image.convert("RGB")
+    except Exception as exc:
+        raise ValueError(f"Invalid image data: {exc}")
+
+
+def encode_image(image, quality=95):
+    """
+    Convert PIL image to base64 JPEG.
+    """
+
+    buffer = io.BytesIO()
+
+    image.save(
+        buffer,
+        format="JPEG",
+        quality=quality,
+        optimize=True,
+    )
+
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+
+def load_model():
+    """
+    Load our VASUNDHARA VTON model.
+
+    For the first worker-health test we intentionally
+    do not load heavy model weights yet.
+    """
+
+    global MODEL
+
+    if MODEL is not None:
+        return MODEL
+
+    print("==============================================")
+    print("VASUNDHARA VTON V7")
+    print("Initializing model...")
+    print("==============================================")
+
+    # -----------------------------------------------------
+    # Model will be connected here after worker startup
+    # is verified.
+    # -----------------------------------------------------
+
+    MODEL = {
+        "name": "VASUNDHARA-VTON-V7",
+        "device": "cuda" if torch.cuda.is_available() else "cpu",
+    }
+
+    print(f"Device: {MODEL['device']}")
+
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(
+            f"CUDA: {torch.version.cuda}"
+        )
+
+    print("Model initialization complete.")
+
+    return MODEL
+
+
+def run_vton(person_image, garment_image):
+    """
+    VASUNDHARA VTON inference entry point.
+
+    The actual trained VTON network will be connected here.
+    """
+
+    model = load_model()
+
+    print("Running VASUNDHARA VTON...")
+    print(f"Person size: {person_image.size}")
+    print(f"Garment size: {garment_image.size}")
+
+    # -----------------------------------------------------
+    # TEMPORARY V7 PIPELINE TEST
+    #
+    # This verifies that:
+    #   image decoding
+    #   PIL processing
+    #   GPU environment
+    #   model initialization
+    #   image encoding
+    #
+    # all work correctly.
+    #
+    # IMPORTANT:
+    # This is NOT the final VTON generation.
+    # -----------------------------------------------------
+
+    result = person_image.copy()
+
+    return result
+
+
+def handler(job):
+    """
+    RunPod Serverless handler.
+    """
+
+    try:
+        job_input = job.get("input", {})
+
+        if not isinstance(job_input, dict):
+            raise ValueError("input must be an object")
+
+        # -------------------------------------------------
+        # Health test
+        # -------------------------------------------------
+
+        if job_input.get("test") is True:
+            model = load_model()
+
+            return {
+                "status": "ok",
+                "service": "VASUNDHARA VTON",
+                "version": "V7",
+                "device": model["device"],
+                "cuda_available": torch.cuda.is_available(),
+            }
+
+        # -------------------------------------------------
+        # VTON request
+        # -------------------------------------------------
+
+        person_data = (
+            job_input.get("person_image")
+            or job_input.get("person")
+        )
+
+        garment_data = (
+            job_input.get("garment_image")
+            or job_input.get("garment")
+            or job_input.get("saree_image")
+        )
+
+        if not person_data:
+            raise ValueError(
+                "person_image is required"
+            )
+
+        if not garment_data:
+            raise ValueError(
+                "garment_image is required"
+            )
+
+        person_image = decode_image(person_data)
+        garment_image = decode_image(garment_data)
+
+        result = run_vton(
+            person_image,
+            garment_image,
+        )
+
+        result_base64 = encode_image(result)
+
+        return {
+            "status": "success",
+            "service": "VASUNDHARA VTON",
+            "version": "V7",
+            "image": result_base64,
+        }
+
+    except Exception as exc:
+
+        print("==============================================")
+        print("VASUNDHARA VTON ERROR")
+        print("==============================================")
+
+        traceback.print_exc()
+
+        return {
+            "status": "error",
+            "error": str(exc),
+        }
+
+
+# =========================================================
+# START SERVERLESS WORKER
+# =========================================================
+
+print("==============================================")
+print("Starting VASUNDHARA VTON V7 worker")
+print("==============================================")
+
+runpod.serverless.start(
+    {
+        "handler": handler
+    }
+)
