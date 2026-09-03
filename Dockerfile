@@ -6,10 +6,9 @@ ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/workspace/huggingface
 ENV TRANSFORMERS_CACHE=/workspace/huggingface
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-ENV PIP_NO_CACHE_DIR=1
 
 # ---------------------------------------------------------
-# System dependencies
+# System packages
 # ---------------------------------------------------------
 
 RUN apt-get update && apt-get install -y \
@@ -21,73 +20,26 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------
-# Remove conflicting preinstalled Python packages
-# ---------------------------------------------------------
-
-RUN python -m pip uninstall -y \
-    numpy \
-    opencv-python \
-    opencv-python-headless \
-    matplotlib \
-    scipy \
-    2>/dev/null || true
-
-# ---------------------------------------------------------
-# Install NumPy FIRST
-# ---------------------------------------------------------
-
-RUN python -m pip install \
-    --no-cache-dir \
-    --force-reinstall \
-    numpy==1.26.4
-
-# ---------------------------------------------------------
-# Verify NumPy before installing other packages
-# ---------------------------------------------------------
-
-RUN python -c "import numpy; print('NUMPY VERSION:', numpy.__version__); print('NUMPY PATH:', numpy.__file__)"
-
-# ---------------------------------------------------------
-# Application requirements
+# Python dependencies
+# IMPORTANT:
+# Do NOT install another torch version.
+# Base image already provides PyTorch 2.8 + CUDA 12.8.
 # ---------------------------------------------------------
 
 COPY requirements-serverless.txt /workspace/requirements-serverless.txt
 
-RUN python -m pip install \
-    --no-cache-dir \
+RUN pip install --no-cache-dir \
     -r /workspace/requirements-serverless.txt
 
 # ---------------------------------------------------------
-# Copy application
+# Application
 # ---------------------------------------------------------
 
-COPY . /workspace
-
-# ---------------------------------------------------------
-# Final dependency verification
-# ---------------------------------------------------------
-
-RUN python - <<'PY'
-import numpy
-print("========================================")
-print("NumPy:", numpy.__version__)
-
-import torch
-print("PyTorch:", torch.__version__)
-print("CUDA available:", torch.cuda.is_available())
-
-import diffusers
-print("Diffusers:", diffusers.__version__)
-
-import transformers
-print("Transformers:", transformers.__version__)
-
-print("========================================")
-print("BASIC IMPORT TEST PASSED")
-PY
+COPY handler.py /workspace/handler.py
+COPY vton /workspace/vton
 
 # ---------------------------------------------------------
 # Start RunPod worker
 # ---------------------------------------------------------
 
-CMD ["python", "-u", "handler.py"]
+CMD ["python", "-u", "/workspace/handler.py"]
