@@ -1,46 +1,66 @@
+import os
 import torch
-import torch.nn as nn
+
+from fashn_vton import TryOnPipeline
 
 
-# =========================================================
-# VASUNDHARA VTON V7
-# Model Interface
-# =========================================================
-
-
-class VasundharaVTON(nn.Module):
+class VasundharaVTON:
     """
-    VASUNDHARA VTON model interface.
+    VASUNDHARA VTON V7 foundation engine.
 
-    This class is the place where our trained VTON
-    architecture and weights will be connected.
+    Current foundation:
+        FASHN VTON v1.5
+
+    Future:
+        VASUNDHARA-trained weights
     """
 
     def __init__(self):
-        super().__init__()
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
+        self.weights_dir = os.environ.get(
+            "VTON_WEIGHTS_DIR",
+            "/workspace/weights",
         )
 
-        self.initialized = True
+        print("==============================================")
+        print("Loading VASUNDHARA VTON")
+        print("Foundation: FASHN VTON v1.5")
+        print(f"Device: {self.device}")
+        print(f"Weights: {self.weights_dir}")
+        print("==============================================")
 
-    def forward(self, person, garment):
-        """
-        Main VTON forward pass.
-
-        The trained VTON network will be connected here.
-        """
-
-        raise NotImplementedError(
-            "VASUNDHARA VTON model weights/network "
-            "have not been connected yet."
+        self.pipeline = TryOnPipeline(
+            weights_dir=self.weights_dir,
+            device=self.device,
         )
+
+        print("VASUNDHARA VTON engine loaded.")
+
+    def generate(
+        self,
+        person_image,
+        garment_image,
+        category="one-pieces",
+    ):
+        result = self.pipeline(
+            person_image=person_image,
+            garment_image=garment_image,
+            category=category,
+            garment_photo_type="flat-lay",
+            num_samples=1,
+            num_timesteps=30,
+            guidance_scale=1.5,
+            seed=42,
+            segmentation_free=True,
+        )
+
+        return result.images[0]
 
     def info(self):
         return {
             "name": "VASUNDHARA VTON",
             "version": "V7",
-            "device": str(self.device),
-            "cuda_available": torch.cuda.is_available(),
+            "foundation": "FASHN VTON v1.5",
+            "device": self.device,
         }
