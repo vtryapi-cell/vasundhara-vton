@@ -8,7 +8,7 @@ ENV TRANSFORMERS_CACHE=/workspace/huggingface
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # ---------------------------------------------------------
-# System packages
+# System dependencies
 # ---------------------------------------------------------
 
 RUN apt-get update && apt-get install -y \
@@ -21,9 +21,6 @@ RUN apt-get update && apt-get install -y \
 
 # ---------------------------------------------------------
 # Python dependencies
-# IMPORTANT:
-# Do NOT install another torch version.
-# Base image already provides PyTorch 2.8 + CUDA 12.8.
 # ---------------------------------------------------------
 
 COPY requirements-serverless.txt /workspace/requirements-serverless.txt
@@ -39,7 +36,7 @@ COPY handler.py /workspace/handler.py
 COPY vton /workspace/vton
 
 # ---------------------------------------------------------
-# Start RunPod worker
+# RunPod Serverless worker
 # ---------------------------------------------------------
 
 CMD ["python", "-u", "/workspace/handler.py"]
