@@ -6,56 +6,53 @@ import runpod
 import torch
 from PIL import Image
 
-from vton.inference import generate_tryon
+from vton.model import create_model
 
 
-# =========================================================
-# VASUNDHARA VTON V7
-# =========================================================
-
-print("=================================================")
-print("Starting VASUNDHARA VTON V7")
-print("=================================================")
-
-print(f"PyTorch version : {torch.__version__}")
-print(f"CUDA available  : {torch.cuda.is_available()}")
-
-if torch.cuda.is_available():
-    print(f"CUDA version    : {torch.version.cuda}")
-    print(f"GPU             : {torch.cuda.get_device_name(0)}")
+MODEL = None
 
 
-# =========================================================
-# BASE64 -> PIL
-# =========================================================
+def load_model():
+    global MODEL
+
+    if MODEL is None:
+        device = (
+            "cuda"
+            if torch.cuda.is_available()
+            else "cpu"
+        )
+
+        print("========================================")
+        print("Loading VASUNDHARA VTON")
+        print("Version: V7")
+        print(f"Device: {device}")
+        print("========================================")
+
+        MODEL = create_model(device)
+
+        MODEL.eval()
+
+        print("VASUNDHARA model loaded.")
+
+    return MODEL
+
 
 def decode_image(value):
+
     if not value:
-        raise ValueError("Image data is missing")
-
-    if isinstance(value, dict):
-        value = value.get("data") or value.get("image")
-
-    if not isinstance(value, str):
-        raise ValueError("Image must be a base64 string")
+        raise ValueError("Image is missing")
 
     if value.startswith("data:image"):
         value = value.split(",", 1)[1]
 
-    try:
-        raw = base64.b64decode(value)
-        image = Image.open(io.BytesIO(raw))
-        return image.convert("RGB")
+    data = base64.b64decode(value)
 
-    except Exception as exc:
-        raise ValueError(
-            f"Could not decode image: {exc}"
-        )
+    image = Image.open(
+        io.BytesIO(data)
+    ).convert("RGB")
 
+    return image
 
-# =========================================================
-# PIL -> BASE64
-# =========================================================
 
 def encode_image(image):
 
@@ -72,109 +69,54 @@ def encode_image(image):
     ).decode("utf-8")
 
 
-# =========================================================
-# HEALTH CHECK
-# =========================================================
-
-def health_check():
-
-    return {
-        "status": "ok",
-        "service": "VASUNDHARA VTON",
-        "version": "V7",
-        "cuda_available": torch.cuda.is_available(),
-        "torch_version": torch.__version__,
-        "cuda_version": (
-            torch.version.cuda
-            if torch.cuda.is_available()
-            else None
-        ),
-        "gpu": (
-            torch.cuda.get_device_name(0)
-            if torch.cuda.is_available()
-            else None
-        ),
-    }
-
-
-# =========================================================
-# VTON
-# =========================================================
-
-def run_vton(
-    person_image,
-    garment_image,
-    category="one-pieces",
-):
-
-    print("=================================================")
-    print("Running VASUNDHARA VTON")
-    print("=================================================")
-
-    print(
-        f"Person image size  : {person_image.size}"
-    )
-
-    print(
-        f"Garment image size : {garment_image.size}"
-    )
-
-    print(
-        f"Category           : {category}"
-    )
-
-    result = generate_tryon(
-        person_image=person_image,
-        garment_image=garment_image,
-        category=category,
-    )
-
-    if not result:
-        raise RuntimeError(
-            "VTON returned no image"
-        )
-
-    print("VTON generation complete.")
-
-    return result
-
-
-# =========================================================
-# RUNPOD HANDLER
-# =========================================================
-
 def handler(job):
 
     try:
 
-        job_input = job.get("input", {})
+        data = job.get("input", {})
 
-        if not isinstance(job_input, dict):
-            raise ValueError(
-                "input must be an object"
+        # --------------------------------------------
+        # Worker health test
+        # --------------------------------------------
+
+        if data.get("test") is True:
+
+            device = (
+                "cuda"
+                if torch.cuda.is_available()
+                else "cpu"
             )
 
-        # -------------------------------------------------
-        # HEALTH TEST
-        # -------------------------------------------------
+            return {
+                "status": "ok",
+                "service": "VASUNDHARA VTON",
+                "version": "V7",
+                "device": device,
+                "torch": torch.__version__,
+                "cuda": torch.version.cuda,
+                "gpu": (
+                    torch.cuda.get_device_name(0)
+                    if torch.cuda.is_available()
+                    else None
+                ),
+            }
 
-        if job_input.get("test") is True:
+        # --------------------------------------------
+        # Load model
+        # --------------------------------------------
 
-            return health_check()
+        model = load_model()
 
-        # -------------------------------------------------
-        # INPUT IMAGES
-        # -------------------------------------------------
+        # --------------------------------------------
+        # Images
+        # --------------------------------------------
 
-        person_data = (
-            job_input.get("person_image")
-            or job_input.get("person")
+        person_data = data.get(
+            "person_image"
         )
 
-        garment_data = (
-            job_input.get("garment_image")
-            or job_input.get("garment")
-            or job_input.get("saree_image")
+        garment_data = data.get(
+            "garment_image"
         )
 
         if not person_data:
@@ -187,90 +129,166 @@ def handler(job):
                 "garment_image is required"
             )
 
-        # -------------------------------------------------
-        # CATEGORY
-        # -------------------------------------------------
-
-        category = job_input.get(
-            "category",
-            "one-pieces",
-        )
-
-        allowed_categories = {
-            "tops",
-            "bottoms",
-            "one-pieces",
-        }
-
-        if category not in allowed_categories:
-            raise ValueError(
-                "category must be one of: "
-                "tops, bottoms, one-pieces"
-            )
-
-        # -------------------------------------------------
-        # GARMENT PHOTO TYPE
-        # -------------------------------------------------
-
-        garment_photo_type = job_input.get(
-            "garment_photo_type",
-            "flat-lay",
-        )
-
-        if garment_photo_type not in {
-            "model",
-            "flat-lay",
-        }:
-            raise ValueError(
-                "garment_photo_type must be "
-                "model or flat-lay"
-            )
-
-        # -------------------------------------------------
-        # DECODE
-        # -------------------------------------------------
-
-        person_image = decode_image(
+        person = decode_image(
             person_data
         )
 
-        garment_image = decode_image(
+        garment = decode_image(
             garment_data
         )
 
-        # -------------------------------------------------
-        # GENERATE
-        # -------------------------------------------------
-
-        result = run_vton(
-            person_image,
-            garment_image,
-            category=category,
+        print(
+            f"Person: {person.size}"
         )
 
-        # -------------------------------------------------
-        # ENCODE
-        # -------------------------------------------------
+        print(
+            f"Garment: {garment.size}"
+        )
 
-        output_image = encode_image(result)
+        # --------------------------------------------
+        # Resize for model
+        # --------------------------------------------
+
+        size = (512, 768)
+
+        person = person.resize(
+            size,
+            Image.Resampling.LANCZOS,
+        )
+
+        garment = garment.resize(
+            size,
+            Image.Resampling.LANCZOS,
+        )
+
+        # --------------------------------------------
+        # Tensor conversion
+        # --------------------------------------------
+
+        person_tensor = (
+            torch.from_numpy(
+                __import__("numpy")
+                .array(person)
+            )
+            .permute(2, 0, 1)
+            .float()
+            / 255.0
+        )
+
+        garment_tensor = (
+            torch.from_numpy(
+                __import__("numpy")
+                .array(garment)
+            )
+            .permute(2, 0, 1)
+            .float()
+            / 255.0
+        )
+
+        # Normalize
+        person_tensor = (
+            person_tensor * 2.0 - 1.0
+        )
+
+        garment_tensor = (
+            garment_tensor * 2.0 - 1.0
+        )
+
+        # --------------------------------------------
+        # Temporary masks
+        # --------------------------------------------
+
+        clothing_mask = torch.ones(
+            1,
+            768,
+            512,
+        )
+
+        face_mask = torch.ones(
+            1,
+            768,
+            512,
+        )
+
+        # --------------------------------------------
+        # Batch + device
+        # --------------------------------------------
+
+        device = next(
+            model.parameters()
+        ).device
+
+        person_tensor = (
+            person_tensor
+            .unsqueeze(0)
+            .to(device)
+        )
+
+        garment_tensor = (
+            garment_tensor
+            .unsqueeze(0)
+            .to(device)
+        )
+
+        clothing_mask = (
+            clothing_mask
+            .unsqueeze(0)
+            .to(device)
+        )
+
+        face_mask = (
+            face_mask
+            .unsqueeze(0)
+            .to(device)
+        )
+
+        # --------------------------------------------
+        # Inference
+        # --------------------------------------------
+
+        with torch.no_grad():
+
+            output = model(
+                person_tensor,
+                garment_tensor,
+                clothing_mask,
+                face_mask,
+            )
+
+        # --------------------------------------------
+        # Convert output
+        # --------------------------------------------
+
+        output = output[0]
+
+        output = (
+            output
+            .clamp(-1, 1)
+            .add(1)
+            .div(2)
+            .mul(255)
+            .byte()
+            .permute(1, 2, 0)
+            .cpu()
+            .numpy()
+        )
+
+        result = Image.fromarray(
+            output
+        )
 
         return {
             "status": "success",
             "service": "VASUNDHARA VTON",
             "version": "V7",
-
-            "category": category,
-
-            "image": output_image,
-
-            "format": "jpeg",
+            "image": encode_image(result),
         }
 
     except Exception as exc:
 
-        print("=================================================")
-        print("VASUNDHARA VTON ERROR")
-        print("=================================================")
+        print("========================================")
+        print("VASUNDHARA ERROR")
+        print("========================================")
 
         traceback.print_exc()
 
@@ -280,13 +298,10 @@ def handler(job):
         }
 
 
-# =========================================================
-# START WORKER
-# =========================================================
-
-print("=================================================")
-print("VASUNDHARA VTON WORKER READY")
-print("=================================================")
+print("========================================")
+print("VASUNDHARA VTON V7 WORKER")
+print("Starting...")
+print("========================================")
 
 runpod.serverless.start(
     {
