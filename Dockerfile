@@ -8,7 +8,7 @@ ENV TRANSFORMERS_CACHE=/workspace/huggingface
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # =========================================================
-# System packages
+# System dependencies
 # =========================================================
 
 RUN apt-get update && apt-get install -y \
@@ -29,37 +29,33 @@ RUN pip install --no-cache-dir \
     -r /workspace/requirements-serverless.txt
 
 # =========================================================
-# JCo-MVTON engine source
+# FASHN VTON v1.5
 # =========================================================
 
 RUN git clone --depth 1 \
-    https://github.com/damo-cv/JCo-MVTON.git \
-    /workspace/jco-mvton
-
-# =========================================================
-# Modified Diffusers 0.33.0
-# =========================================================
-
-RUN git clone --depth 1 --branch v0.33.0 \
-    https://github.com/huggingface/diffusers.git \
-    /workspace/diffusers
-
-RUN cp \
-    /workspace/jco-mvton/flux/modeling_utils.py \
-    /workspace/diffusers/src/diffusers/models/modeling_utils.py
+    https://github.com/fashn-AI/fashn-vton-1.5.git \
+    /workspace/fashn-vton
 
 RUN pip install --no-cache-dir \
-    /workspace/diffusers
+    -e /workspace/fashn-vton
 
 # =========================================================
-# Application
+# Download VTON weights
+# =========================================================
+
+RUN mkdir -p /workspace/weights && \
+    python /workspace/fashn-vton/scripts/download_weights.py \
+    --weights-dir /workspace/weights
+
+# =========================================================
+# VASUNDHARA application
 # =========================================================
 
 COPY handler.py /workspace/handler.py
 COPY vton /workspace/vton
 
 # =========================================================
-# RunPod worker
+# RunPod Serverless
 # =========================================================
 
 CMD ["python", "-u", "/workspace/handler.py"]
