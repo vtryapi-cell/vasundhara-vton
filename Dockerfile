@@ -18,10 +18,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------
-# Fix scientific Python binary compatibility FIRST
+# Remove potentially incompatible scientific packages
 # ---------------------------------------------------------
 RUN pip uninstall -y numpy scipy || true
 
+# ---------------------------------------------------------
+# Install compatible NumPy + SciPy
+# ---------------------------------------------------------
 RUN pip install --no-cache-dir \
     numpy==1.26.4 \
     scipy==1.13.1
@@ -35,14 +38,14 @@ RUN pip install --no-cache-dir \
     -r /workspace/requirements-serverless.txt
 
 # ---------------------------------------------------------
-# Re-pin NumPy/SciPy after all dependencies
+# Force final NumPy/SciPy versions
 # ---------------------------------------------------------
 RUN pip install --no-cache-dir --force-reinstall \
     numpy==1.26.4 \
     scipy==1.13.1
 
 # ---------------------------------------------------------
-# Verify the scientific stack during BUILD
+# Verify scientific stack
 # ---------------------------------------------------------
 RUN python - <<'PY'
 import numpy
