@@ -19,6 +19,8 @@ tmp
 temp
 
 *.log
+*.ipynb
+*.zip
 
 .DS_Store
 Thumbs.db
