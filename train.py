@@ -52,6 +52,8 @@ def run_epoch(model, loader, optimizer, scaler, device, train=True):
 
 def load_training_checkpoint(path, model, optimizer, scheduler, device):
     ckpt = torch.load(path, map_location=device)
+    if not isinstance(ckpt, dict) or "model" not in ckpt:
+        raise ValueError("Unsupported training checkpoint: expected model/optimizer/scheduler keys")
     model.load_state_dict(ckpt["model"])
     optimizer.load_state_dict(ckpt["optimizer"])
     scheduler.load_state_dict(ckpt["scheduler"])
@@ -61,6 +63,7 @@ def load_training_checkpoint(path, model, optimizer, scheduler, device):
 def main():
     p = argparse.ArgumentParser(description="Train the Vasundhara VTON model.")
     p.add_argument("--data-root", required=True)
+    p.add_argument("--manifest", default="", help="Optional CSV/JSON manifest relative to or outside data-root")
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--batch-size", type=int, default=1)
     p.add_argument("--lr", type=float, default=1e-4)
@@ -74,9 +77,19 @@ def main():
 
     if not torch.cuda.is_available():
         raise RuntimeError("Training requires an NVIDIA CUDA GPU. Use CPU only for code smoke tests.")
+    if args.epochs < 1:
+        raise ValueError("--epochs must be at least 1")
+    if args.batch_size < 1:
+        raise ValueError("--batch-size must be at least 1")
+    if not 0.0 < args.val_ratio < 1.0:
+        raise ValueError("--val-ratio must be between 0 and 1")
 
     device = torch.device("cuda")
-    ds = VTONDataset(args.data_root, size=(args.width, args.height))
+    ds = VTONDataset(
+        args.data_root,
+        size=(args.width, args.height),
+        manifest=args.manifest or None,
+    )
     if len(ds) < 2:
         raise RuntimeError("Need at least 2 paired samples for train/validation split")
 
@@ -119,6 +132,9 @@ def main():
         start, best = load_training_checkpoint(
             args.resume, model, optimizer, scheduler, device
         )
+        if start >= args.epochs:
+            print("Checkpoint already reached requested epoch count.", flush=True)
+            return
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -129,6 +145,7 @@ def main():
             val_loss = run_epoch(model, val_loader, optimizer, scaler, device, train=False)
 
         scheduler.step()
+        improved = val_loss < best
         best = min(best, val_loss)
         state = {
             "epoch": epoch,
@@ -138,7 +155,7 @@ def main():
             "best_val": best,
         }
         torch.save(state, out / "last.pt")
-        if val_loss <= best:
+        if improved:
             torch.save(state, out / "best.pt")
 
         print(
