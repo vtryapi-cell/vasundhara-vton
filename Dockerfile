@@ -6,8 +6,10 @@ ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/workspace/huggingface
 ENV TRANSFORMERS_CACHE=/workspace/huggingface
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ENV PIP_NO_CACHE_DIR=1
 ENV FORCE_CUDA=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # System/build dependencies for CatVTON + DensePose/Detectron2
 RUN apt-get update && apt-get install -y \
@@ -26,20 +28,20 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Keep the scientific stack compatible with the current PyTorch image.
+# Remove conflicting scientific/diffusion packages from the RunPod base image.
 RUN python -m pip uninstall -y \
     numpy scipy diffusers transformers accelerate safetensors huggingface-hub \
-    opencv-python opencv-python-headless \
+    tokenizers opencv-python opencv-python-headless \
     2>/dev/null || true
 
+# Stable scientific stack.
 RUN python -m pip install --no-cache-dir \
     numpy==1.26.4 \
     scipy==1.13.1 \
     Pillow==10.3.0 \
     opencv-python-headless==4.10.0.84
 
-# CatVTON's tested diffusion stack. We deliberately do not install its old
-# torch/xformers pins because the RunPod base image already supplies PyTorch.
+# CatVTON-compatible diffusion stack.
 RUN python -m pip install --no-cache-dir \
     diffusers==0.29.2 \
     transformers==4.27.3 \
@@ -55,14 +57,12 @@ RUN python -m pip install --no-cache-dir \
     PyYAML==6.0.1 \
     Ninja==1.11.1.1
 
-# Detectron2 is required by CatVTON's AutoMasker/DensePose path.
-# Build it against the exact PyTorch/CUDA stack in this image.
+# Detectron2/DensePose required by CatVTON AutoMasker.
 RUN git clone --depth 1 https://github.com/facebookresearch/detectron2.git /opt/detectron2
 RUN python -m pip install --no-cache-dir --no-build-isolation -e /opt/detectron2
 RUN python -m pip install --no-cache-dir --no-build-isolation -e /opt/detectron2/projects/DensePose
 
-# Clone CatVTON source because the application repository intentionally does
-# not vendor the upstream project.
+# Upstream CatVTON source.
 RUN git clone --depth 1 https://github.com/Zheng-Chong/CatVTON.git /workspace/CatVTON
 
 # Runtime/application packages.
@@ -72,7 +72,26 @@ RUN python -m pip install --no-cache-dir \
     requests \
     gradio
 
-# Basic environment checks.
+# Copy our application.
+COPY . /workspace
+
+# ------------------------------------------------------------
+# FINAL DEPENDENCY LOCK
+# ------------------------------------------------------------
+# This runs AFTER COPY so the final image always contains the exact
+# packages required by handler.py, even if requirements files change.
+RUN python -m pip install --no-cache-dir \
+    "diffusers==0.29.2" \
+    "transformers==4.27.3" \
+    "accelerate==0.31.0" \
+    "safetensors==0.4.5" \
+    "huggingface-hub==0.23.4" \
+    "tokenizers==0.13.3"
+
+# ------------------------------------------------------------
+# HARD BUILD VALIDATION
+# ------------------------------------------------------------
+# The Docker build MUST fail here if Diffusers is missing/broken.
 RUN python - <<'PY'
 import sys
 import numpy
@@ -82,12 +101,13 @@ import torchvision
 import diffusers
 import transformers
 import accelerate
+import safetensors
+import huggingface_hub
 from PIL import Image
-import detectron2
-import densepose
+from diffusers.image_processor import VaeImageProcessor
 
 print("========================================")
-print("ENVIRONMENT CHECK")
+print("VASUNDHARA VTON FINAL ENVIRONMENT")
 print("========================================")
 print("Python:", sys.version)
 print("NumPy:", numpy.__version__)
@@ -99,29 +119,19 @@ print("CUDA version:", torch.version.cuda)
 print("Diffusers:", diffusers.__version__)
 print("Transformers:", transformers.__version__)
 print("Accelerate:", accelerate.__version__)
-print("Detectron2: OK")
-print("DensePose: OK")
+print("Safetensors:", safetensors.__version__)
+print("HuggingFace Hub:", huggingface_hub.__version__)
 print("Pillow:", Image.__version__)
-from diffusers.image_processor import VaeImageProcessor
-print("Diffusers imports: OK")
+print("VaeImageProcessor: OK")
 print("========================================")
-print("BUILD ENVIRONMENT OK")
+print("DIFFUSERS ENVIRONMENT CHECK PASSED")
 print("========================================")
 PY
 
-# Copy our application after the upstream CatVTON clone so the two projects
-# remain separate. The uploaded repository does not contain CatVTON/.
-COPY . /workspace
-
-# The COPY above may not include an upstream CatVTON directory; restore it if
-# the build context ever contains a conflicting placeholder directory.
+# Validate CatVTON source.
 RUN test -f /workspace/CatVTON/model/pipeline.py
 RUN test -f /workspace/CatVTON/model/cloth_masker.py
-RUN test -f /workspace/vton/model.py
-RUN test -f /workspace/vton/train_dataset.py
-RUN test -f /workspace/train.py
 
-# Verify upstream CatVTON imports from its own source root.
 RUN python - <<'PY'
 import sys
 sys.path.insert(0, "/workspace/CatVTON")
@@ -131,12 +141,14 @@ from utils import resize_and_crop, resize_and_padding, init_weight_dtype
 print("CatVTONPipeline import: OK")
 print("AutoMasker import: OK")
 print("CatVTON utils import: OK")
-print("========================================")
 print("CATVTON BUILD CHECK PASSED")
-print("========================================")
 PY
 
-# Verify our own trainable VTON code separately.
+# Validate our own VTON code.
+RUN test -f /workspace/vton/model.py
+RUN test -f /workspace/vton/train_dataset.py
+RUN test -f /workspace/train.py
+
 RUN python - <<'PY'
 import sys
 sys.path.insert(0, "/workspace")
@@ -145,8 +157,20 @@ from vton.train_dataset import VTONDataset
 model = create_model(device="cpu")
 print("VasundharaVTON import: OK")
 print("Trainable parameters:", sum(p.numel() for p in model.parameters()))
-print("========================================")
 print("VASUNDHARA VTON BUILD CHECK PASSED")
+PY
+
+# Final handler import check. This catches exactly the previous failure:
+# ModuleNotFoundError: No module named 'diffusers'.
+RUN python - <<'PY'
+import sys
+sys.path.insert(0, "/workspace")
+import diffusers
+import handler
+print("========================================")
+print("HANDLER IMPORT CHECK PASSED")
+print("Diffusers available to handler: YES")
+print("Handler import: OK")
 print("========================================")
 PY
 
