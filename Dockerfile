@@ -1,51 +1,28 @@
-FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-cudnn-devel-ubuntu22.04
+FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel
 
 WORKDIR /workspace
 
-ENV PYTHONUNBUFFERED=1
-ENV HF_HOME=/workspace/huggingface
-ENV TRANSFORMERS_CACHE=/workspace/huggingface
-ENV HF_HUB_DISABLE_TELEMETRY=1
-ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-ENV PIP_NO_CACHE_DIR=1
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1
-ENV FORCE_CUDA=1
-ENV TORCH_CUDA_ARCH_LIST=8.0+PTX
-ENV RUNPOD_INIT_TIMEOUT=900
+ENV PYTHONUNBUFFERED=1 \
+    HF_HOME=/workspace/huggingface \
+    TRANSFORMERS_CACHE=/workspace/huggingface \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    FORCE_CUDA=1 \
+    TORCH_CUDA_ARCH_LIST=8.0+PTX \
+    RUNPOD_INIT_TIMEOUT=900
 
-# CatVTON's published environment is based on PyTorch 2.4 / torchvision 0.19.
-# Detectron2 v0.6 is pinned because it is the version used by CatVTON's
-# DensePose integration. The Docker builder has no GPU, so FORCE_CUDA and
-# TORCH_CUDA_ARCH_LIST are required for the source build.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    wget \
-    curl \
-    build-essential \
-    gcc \
-    g++ \
-    cmake \
-    ninja-build \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
+    git wget curl build-essential gcc g++ cmake ninja-build \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
-
-# Keep the scientific stack aligned with CatVTON.
-RUN python -m pip uninstall -y \
-    numpy scipy diffusers transformers accelerate safetensors huggingface-hub \
-    tokenizers opencv-python opencv-python-headless \
-    2>/dev/null || true
 
 RUN python -m pip install --no-cache-dir \
     numpy==1.26.4 \
     scipy==1.13.1 \
     Pillow==10.3.0 \
-    opencv-python-headless==4.10.0.84
-
-RUN python -m pip install --no-cache-dir \
+    opencv-python-headless==4.10.0.84 \
     diffusers==0.29.2 \
     transformers==4.46.3 \
     accelerate==0.31.0 \
@@ -62,25 +39,20 @@ RUN python -m pip install --no-cache-dir \
     Ninja==1.11.1.1 \
     cloudpickle==3.0.0 \
     omegaconf==2.3.0 \
-    pycocotools==2.0.8
-
-# CatVTON-compatible Detectron2/DensePose.
-RUN git clone --branch v0.6 --depth 1 https://github.com/facebookresearch/detectron2.git /opt/detectron2
-RUN python -m pip install --no-cache-dir --no-build-isolation -e /opt/detectron2
-RUN python -m pip install --no-cache-dir --no-build-isolation -e /opt/detectron2/projects/DensePose
-
-# Upstream CatVTON source.
-RUN git clone --depth 1 https://github.com/Zheng-Chong/CatVTON.git /workspace/CatVTON
-
-# Runtime packages.
-RUN python -m pip install --no-cache-dir \
+    pycocotools==2.0.8 \
     runpod==1.12.0 \
     gradio==4.41.0 \
     requests
 
+# CatVTON-compatible Detectron2/DensePose. Pinned to v0.6.
+RUN git clone --branch v0.6 --depth 1 https://github.com/facebookresearch/detectron2.git /opt/detectron2 \
+    && python -m pip install --no-cache-dir --no-build-isolation -e /opt/detectron2 \
+    && python -m pip install --no-cache-dir --no-build-isolation -e /opt/detectron2/projects/DensePose
+
+RUN git clone --depth 1 https://github.com/Zheng-Chong/CatVTON.git /workspace/CatVTON
+
 COPY . /workspace
 
-# Final version lock. Do not let project files change the CatVTON runtime.
 RUN python -m pip install --no-cache-dir \
     "diffusers==0.29.2" \
     "transformers==4.46.3" \
@@ -89,18 +61,12 @@ RUN python -m pip install --no-cache-dir \
     "huggingface-hub==0.26.2" \
     "tokenizers==0.20.3"
 
-# Build-time smoke tests. No model weights are downloaded here.
+# Build-time smoke tests: imports only, no model weights.
 RUN python - <<'PY'
-import sys
-import torch
-import torchvision
-import numpy
-import scipy
-import diffusers
-import transformers
-import accelerate
-import detectron2
-import densepose
+import sys, ast
+from pathlib import Path
+import torch, torchvision, numpy, scipy
+import diffusers, transformers, accelerate, detectron2, densepose
 from diffusers.image_processor import VaeImageProcessor
 
 print('=== VASUNDHARA VTON BUILD VALIDATION ===')
@@ -115,24 +81,10 @@ print('Diffusers:', diffusers.__version__)
 print('Transformers:', transformers.__version__)
 print('Accelerate:', accelerate.__version__)
 print('Detectron2:', detectron2.__version__)
-print('DensePose import: OK')
+print('DensePose: OK')
 print('VaeImageProcessor: OK')
-print('BUILD ENVIRONMENT PASSED')
-PY
 
-# Validate application/source syntax without importing the GPU worker.
-RUN test -f /workspace/CatVTON/model/pipeline.py
-RUN test -f /workspace/CatVTON/model/cloth_masker.py
-RUN test -f /workspace/handler.py
-RUN test -f /workspace/vton/model.py
-RUN test -f /workspace/vton/train_dataset.py
-RUN test -f /workspace/train.py
-
-RUN python - <<'PY'
-import ast
-from pathlib import Path
-
-files = [
+paths = [
     '/workspace/CatVTON/model/pipeline.py',
     '/workspace/CatVTON/model/cloth_masker.py',
     '/workspace/handler.py',
@@ -140,10 +92,13 @@ files = [
     '/workspace/vton/train_dataset.py',
     '/workspace/train.py',
 ]
-for name in files:
-    ast.parse(Path(name).read_text())
-    print(name, 'syntax: OK')
-print('VASUNDHARA VTON SOURCE CHECK PASSED')
+for p in paths:
+    if not Path(p).is_file():
+        raise FileNotFoundError(p)
+    ast.parse(Path(p).read_text())
+    print('SYNTAX OK:', p)
+
+print('BUILD ENVIRONMENT PASSED')
 PY
 
 CMD ["python", "-u", "/workspace/handler.py"]
