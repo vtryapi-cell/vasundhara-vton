@@ -10,6 +10,12 @@ ENV PIP_NO_CACHE_DIR=1
 ENV FORCE_CUDA=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Detectron2 is compiled during the Docker build, where no GPU is exposed.
+# Without this, PyTorch sees no visible cards and produces an empty CUDA
+# architecture list, causing detectron2 setup.py to fail with IndexError.
+# sm_80+PTX is a portable baseline for the RunPod GPUs used by this worker.
+ENV TORCH_CUDA_ARCH_LIST=8.0+PTX
+
 # System/build dependencies for CatVTON + DensePose/Detectron2
 RUN apt-get update && apt-get install -y \
     git \
