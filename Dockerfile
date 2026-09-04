@@ -1,4 +1,4 @@
-FROM runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2404-cluster
+FROM runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2404
 
 WORKDIR /workspace
 
@@ -7,12 +7,10 @@ ENV HF_HOME=/workspace/huggingface
 ENV TRANSFORMERS_CACHE=/workspace/huggingface
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ENV PIP_NO_CACHE_DIR=1
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# =========================================================
-# SYSTEM DEPENDENCIES
-# =========================================================
-
+# ---------------------------------------------------------
+# System packages
+# ---------------------------------------------------------
 RUN apt-get update && apt-get install -y \
     git \
     wget \
@@ -22,14 +20,13 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender1 \
-    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# =========================================================
-# CLEAN CONFLICTING PYTHON PACKAGES
-# =========================================================
-
-RUN pip uninstall -y \
+# ---------------------------------------------------------
+# IMPORTANT:
+# Clean conflicting preinstalled scientific packages
+# ---------------------------------------------------------
+RUN python -m pip uninstall -y \
     numpy \
     scipy \
     diffusers \
@@ -39,84 +36,65 @@ RUN pip uninstall -y \
     huggingface-hub \
     opencv-python \
     opencv-python-headless \
-    || true
+    2>/dev/null || true
 
-# =========================================================
-# NUMPY / SCIPY
-# Keep these compatible with the PyTorch/CatVTON stack
-# =========================================================
-
-RUN pip install --no-cache-dir \
+# ---------------------------------------------------------
+# Stable NumPy/SciPy versions for this environment
+# ---------------------------------------------------------
+RUN python -m pip install --no-cache-dir \
     numpy==1.26.4 \
     scipy==1.13.1
 
-# =========================================================
-# CORE PYTHON DEPENDENCIES
-# =========================================================
-
-RUN pip install --no-cache-dir \
-    diffusers==0.30.2 \
+# ---------------------------------------------------------
+# HuggingFace / Diffusion stack
+# ---------------------------------------------------------
+RUN python -m pip install --no-cache-dir \
+    diffusers==0.30.3 \
     transformers==4.44.2 \
     accelerate==0.34.2 \
     safetensors==0.4.5 \
-    huggingface_hub==0.24.6 \
+    huggingface-hub==0.24.6 \
+    tokenizers==0.19.1
+
+# ---------------------------------------------------------
+# Image / utility packages
+# ---------------------------------------------------------
+RUN python -m pip install --no-cache-dir \
+    Pillow \
+    opencv-python-headless \
     einops \
-    ftfy \
-    regex \
     tqdm \
     requests \
-    pillow \
-    opencv-python-headless \
-    omegaconf \
-    sentencepiece
+    gradio
 
-# =========================================================
-# RUNPOD
-# =========================================================
-
-RUN pip install --no-cache-dir runpod
-
-# =========================================================
-# COPY PROJECT
-# =========================================================
-
-COPY . /workspace
-
-# =========================================================
-# VERIFY PYTHON DEPENDENCIES DURING BUILD
-# If this fails, Docker build stops instead of deploying
-# a broken worker.
-# =========================================================
-
+# ---------------------------------------------------------
+# VERIFY ENVIRONMENT DURING BUILD
+# If this fails, Docker build stops here instead of
+# producing a broken RunPod worker.
+# ---------------------------------------------------------
 RUN python - <<'PY'
 import sys
-
-print("=" * 60)
-print("VERIFYING PYTHON ENVIRONMENT")
-print("=" * 60)
-
 import numpy
-print("NumPy       :", numpy.__version__)
-
 import scipy
-print("SciPy       :", scipy.__version__)
-
 import torch
-print("PyTorch     :", torch.__version__)
-print("CUDA        :", torch.version.cuda)
-print("CUDA avail. :", torch.cuda.is_available())
-
 import diffusers
-print("Diffusers   :", diffusers.__version__)
-
 import transformers
-print("Transformers:", transformers.__version__)
-
 import accelerate
-print("Accelerate  :", accelerate.__version__)
+from PIL import Image
 
-import safetensors
-print("Safetensors :", safetensors.__version__)
+print("========================================")
+print("ENVIRONMENT CHECK")
+print("========================================")
+print("Python:", sys.version)
+print("NumPy:", numpy.__version__)
+print("SciPy:", scipy.__version__)
+print("PyTorch:", torch.__version__)
+print("CUDA available:", torch.cuda.is_available())
+print("CUDA version:", torch.version.cuda)
+print("Diffusers:", diffusers.__version__)
+print("Transformers:", transformers.__version__)
+print("Accelerate:", accelerate.__version__)
+print("Pillow:", Image.__version__)
 
 from diffusers import AutoencoderKL
 from diffusers import DDIMScheduler
@@ -124,22 +102,40 @@ from diffusers import UNet2DConditionModel
 from diffusers.image_processor import VaeImageProcessor
 
 print("Diffusers imports: OK")
-
-print("=" * 60)
-print("ALL PYTHON DEPENDENCIES OK")
-print("=" * 60)
+print("========================================")
+print("BUILD ENVIRONMENT OK")
+print("========================================")
 PY
 
-# =========================================================
-# VERIFY CATVTON FILES
-# =========================================================
+# ---------------------------------------------------------
+# Copy project
+# ---------------------------------------------------------
+COPY . /workspace
 
-RUN test -f /workspace/handler.py && \
-    test -f /workspace/CatVTON/model/pipeline.py && \
-    echo "CatVTON project files: OK"
+# ---------------------------------------------------------
+# Verify CatVTON source exists
+# ---------------------------------------------------------
+RUN test -f /workspace/handler.py
+RUN test -f /workspace/CatVTON/model/pipeline.py
 
-# =========================================================
-# START RUNPOD WORKER
-# =========================================================
+# ---------------------------------------------------------
+# Final CatVTON import test
+# ---------------------------------------------------------
+RUN python - <<'PY'
+import sys
+sys.path.insert(0, "/workspace")
 
+print("Testing CatVTON import...")
+
+from model.pipeline import CatVTONPipeline
+
+print("CatVTONPipeline import: OK")
+print("========================================")
+print("CATVTON BUILD CHECK PASSED")
+print("========================================")
+PY
+
+# ---------------------------------------------------------
+# Start RunPod worker
+# ---------------------------------------------------------
 CMD ["python", "-u", "/workspace/handler.py"]
