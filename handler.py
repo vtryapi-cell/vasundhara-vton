@@ -1,379 +1,160 @@
-import os
-import sys
-import io
 import base64
+import io
+import os
 import traceback
+from pathlib import Path
 
 import runpod
 import torch
-
 from PIL import Image
 
+from vton.model import create_model, load_checkpoint
 
-# ============================================================
-# CONFIG
-# ============================================================
 
-CATVTON_ROOT = os.environ.get(
-    "CATVTON_ROOT",
-    "/workspace/CatVTON"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+MODEL_PATH = os.environ.get(
+    "MODEL_PATH",
+    "/workspace/checkpoints/vasundhara-vton/best.pt",
 )
+DEFAULT_WIDTH = int(os.environ.get("VTON_WIDTH", "384"))
+DEFAULT_HEIGHT = int(os.environ.get("VTON_HEIGHT", "512"))
 
-if CATVTON_ROOT not in sys.path:
-    sys.path.insert(0, CATVTON_ROOT)
+model = None
+MODEL_READY = False
 
-
-DEVICE = "cuda"
-
-WIDTH = 768
-HEIGHT = 1024
-
-MODEL_REPO = "zhengchong/CatVTON"
-BASE_MODEL = "booksforcharlie/stable-diffusion-inpainting"
-
-DEFAULT_STEPS = 40
-DEFAULT_GUIDANCE = 2.5
-
-
-# ============================================================
-# CATVTON IMPORTS
-# ============================================================
-
-print("Loading CatVTON modules...", flush=True)
-
-from diffusers.image_processor import VaeImageProcessor
-from huggingface_hub import snapshot_download
-
-from model.pipeline import CatVTONPipeline
-from model.cloth_masker import AutoMasker
-
-from utils import (
-    resize_and_crop,
-    resize_and_padding,
-    init_weight_dtype,
-)
-
-
-# ============================================================
-# GPU CHECK
-# ============================================================
-
-if not torch.cuda.is_available():
-    raise RuntimeError(
-        "CUDA GPU is required. "
-        "This worker must run on an NVIDIA GPU."
-    )
-
-print("=" * 60, flush=True)
-print("VASUNDHARA VTON WORKER", flush=True)
-print("=" * 60, flush=True)
-
-print(
-    f"GPU: {torch.cuda.get_device_name(0)}",
-    flush=True
-)
-
-print(
-    f"CUDA: {torch.version.cuda}",
-    flush=True
-)
-
-print(
-    f"PyTorch: {torch.__version__}",
-    flush=True
-)
-
-
-# ============================================================
-# DOWNLOAD CATVTON WEIGHTS
-# ============================================================
-
-print("=" * 60, flush=True)
-print("Downloading/loading CatVTON weights...", flush=True)
-print("=" * 60, flush=True)
-
-REPO_PATH = snapshot_download(
-    repo_id=MODEL_REPO
-)
-
-print(
-    f"CatVTON weights: {REPO_PATH}",
-    flush=True
-)
-
-
-# ============================================================
-# LOAD PIPELINE
-# ============================================================
-
-print("Loading CatVTON pipeline...", flush=True)
-
-weight_dtype = init_weight_dtype("bf16")
-
-pipeline = CatVTONPipeline(
-    base_ckpt=BASE_MODEL,
-    attn_ckpt=REPO_PATH,
-    attn_ckpt_version="mix",
-    weight_dtype=weight_dtype,
-    use_tf32=True,
-    device=DEVICE,
-)
-
-print("CatVTON pipeline loaded.", flush=True)
-
-
-# ============================================================
-# MASK PROCESSOR
-# ============================================================
-
-mask_processor = VaeImageProcessor(
-    vae_scale_factor=8,
-    do_normalize=False,
-    do_binarize=True,
-    do_convert_grayscale=True,
-)
-
-
-# ============================================================
-# AUTOMASKER
-# ============================================================
-
-print("Loading AutoMasker...", flush=True)
-
-automasker = AutoMasker(
-    densepose_ckpt=os.path.join(
-        REPO_PATH,
-        "DensePose"
-    ),
-    schp_ckpt=os.path.join(
-        REPO_PATH,
-        "SCHP"
-    ),
-    device=DEVICE,
-)
-
-print("=" * 60, flush=True)
-print("VASUNDHARA VTON READY", flush=True)
-print("=" * 60, flush=True)
-
-
-# ============================================================
-# IMAGE DECODER
-# ============================================================
 
 def decode_image(value):
-
     if value is None:
-        raise ValueError(
-            "Image value is missing."
-        )
-
-    # PIL
+        raise ValueError("Image value is missing")
     if isinstance(value, Image.Image):
         return value.convert("RGB")
-
-    # Base64 / Data URI
+    if isinstance(value, (bytes, bytearray)):
+        return Image.open(io.BytesIO(value)).convert("RGB")
     if isinstance(value, str):
-
         if value.startswith("data:"):
-            try:
-                value = value.split(",", 1)[1]
-            except Exception:
-                raise ValueError(
-                    "Invalid data URI image."
-                )
-
+            value = value.split(",", 1)[1]
         try:
             raw = base64.b64decode(value)
-
-            image = Image.open(
-                io.BytesIO(raw)
-            ).convert("RGB")
-
-            return image
-
+            return Image.open(io.BytesIO(raw)).convert("RGB")
         except Exception as exc:
-            raise ValueError(
-                f"Could not decode base64 image: {exc}"
-            )
+            raise ValueError(f"Could not decode image: {exc}") from exc
+    raise ValueError("Unsupported image format")
 
-    # Bytes
-    if isinstance(value, (bytes, bytearray)):
 
+def decode_mask(value, size):
+    if value is None:
+        return None
+    if isinstance(value, Image.Image):
+        image = value.convert("L")
+    elif isinstance(value, (bytes, bytearray)):
+        image = Image.open(io.BytesIO(value)).convert("L")
+    elif isinstance(value, str):
+        if value.startswith("data:"):
+            value = value.split(",", 1)[1]
         try:
-            return Image.open(
-                io.BytesIO(value)
-            ).convert("RGB")
-
+            image = Image.open(io.BytesIO(base64.b64decode(value))).convert("L")
         except Exception as exc:
-            raise ValueError(
-                f"Could not decode image bytes: {exc}"
-            )
+            raise ValueError(f"Could not decode mask: {exc}") from exc
+    else:
+        raise ValueError("Unsupported mask format")
+    return image.resize(size, Image.Resampling.NEAREST)
 
-    raise ValueError(
-        "Unsupported image format."
-    )
-
-
-# ============================================================
-# IMAGE ENCODER
-# ============================================================
 
 def encode_image(image):
-
     buffer = io.BytesIO()
-
-    image.save(
-        buffer,
-        format="PNG"
-    )
-
-    return base64.b64encode(
-        buffer.getvalue()
-    ).decode("utf-8")
+    image.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
-# ============================================================
-# TRY-ON
-# ============================================================
+def image_to_tensor(image, size):
+    image = image.resize(size, Image.Resampling.BICUBIC)
+    values = torch.frombuffer(bytearray(image.tobytes()), dtype=torch.uint8)
+    tensor = values.reshape(image.height, image.width, 3).permute(2, 0, 1)
+    tensor = tensor.float().div(255.0).mul(2.0).sub(1.0)
+    return tensor.unsqueeze(0)
 
-def run_tryon(
-    person_image,
-    garment_image,
-    cloth_type="overall",
-    steps=DEFAULT_STEPS,
-    guidance_scale=DEFAULT_GUIDANCE,
-    seed=-1,
-):
+
+def mask_to_tensor(mask, size):
+    mask = mask.resize(size, Image.Resampling.NEAREST)
+    values = torch.frombuffer(bytearray(mask.tobytes()), dtype=torch.uint8)
+    tensor = values.reshape(mask.height, mask.width).float().div(255.0)
+    return tensor.unsqueeze(0).unsqueeze(0)
+
+
+def fallback_masks(size):
+    """Simple fallback only for endpoint smoke tests.
+
+    Production-quality results should send trained segmentation masks from
+    the data/segmentation pipeline. The own VASUNDHARA model itself does not
+    depend on CatVTON, DensePose, Detectron2, or any external VTON model.
+    """
+    width, height = size
+    clothing = Image.new("L", size, 0)
+    face = Image.new("L", size, 0)
+
+    # Broad torso region, leaving the head mostly untouched.
+    clothing_pixels = clothing.load()
+    for y in range(int(height * 0.25), int(height * 0.92)):
+        for x in range(int(width * 0.12), int(width * 0.88)):
+            clothing_pixels[x, y] = 255
+
+    # Broad face region near the top of the image.
+    face_pixels = face.load()
+    for y in range(0, int(height * 0.24)):
+        for x in range(int(width * 0.25), int(width * 0.75)):
+            face_pixels[x, y] = 255
+
+    return clothing, face
+
+
+def load_model():
+    global model, MODEL_READY
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA GPU is required for VASUNDHARA inference")
 
     print("=" * 60, flush=True)
-    print("Preparing person image...", flush=True)
+    print("VASUNDHARA VTON WORKER", flush=True)
+    print("GPU:", torch.cuda.get_device_name(0), flush=True)
+    print("PyTorch:", torch.__version__, flush=True)
+    print("CUDA:", torch.version.cuda, flush=True)
+    print("Model path:", MODEL_PATH, flush=True)
+    print("=" * 60, flush=True)
 
-    person_image = resize_and_crop(
-        person_image,
-        (WIDTH, HEIGHT)
-    )
+    model = create_model(device=DEVICE)
 
-    print(
-        "Preparing garment image...",
-        flush=True
-    )
-
-    garment_image = resize_and_padding(
-        garment_image,
-        (WIDTH, HEIGHT)
-    )
-
-
-    # --------------------------------------------------------
-    # MASK
-    # --------------------------------------------------------
-
-    print(
-        f"Generating mask: {cloth_type}",
-        flush=True
-    )
-
-    mask = automasker(
-        person_image,
-        cloth_type
-    )["mask"]
-
-    mask = mask_processor.blur(
-        mask,
-        blur_factor=9
-    )
+    if Path(MODEL_PATH).is_file():
+        print("Loading trained VASUNDHARA checkpoint...", flush=True)
+        model = load_checkpoint(model, MODEL_PATH, device=DEVICE)
+        MODEL_READY = True
+        print("VASUNDHARA checkpoint loaded.", flush=True)
+    else:
+        MODEL_READY = False
+        model.eval()
+        print(
+            "WARNING: trained checkpoint not found. "
+            "Worker will start, but inference requests will return a clear error.",
+            flush=True,
+        )
 
 
-    # --------------------------------------------------------
-    # SEED
-    # --------------------------------------------------------
+load_model()
 
-    generator = None
-
-    if seed is not None:
-
-        seed = int(seed)
-
-        if seed >= 0:
-
-            generator = torch.Generator(
-                device=DEVICE
-            ).manual_seed(seed)
-
-
-    # --------------------------------------------------------
-    # INFERENCE
-    # --------------------------------------------------------
-
-    print(
-        "Running CatVTON inference...",
-        flush=True
-    )
-
-    with torch.inference_mode():
-
-        result = pipeline(
-            image=person_image,
-            condition_image=garment_image,
-            mask=mask,
-            num_inference_steps=int(steps),
-            guidance_scale=float(
-                guidance_scale
-            ),
-            height=HEIGHT,
-            width=WIDTH,
-            generator=generator,
-        )[0]
-
-
-    print(
-        "Generation complete.",
-        flush=True
-    )
-
-    return result
-
-
-# ============================================================
-# RUNPOD HANDLER
-# ============================================================
 
 def handler(job):
-
     try:
-
-        print("=" * 60, flush=True)
-        print("NEW VTON REQUEST", flush=True)
-        print("=" * 60, flush=True)
-
-        job_input = job.get(
-            "input",
-            {}
-        )
-
-
-        # ----------------------------------------------------
-        # PERSON IMAGE
-        # ----------------------------------------------------
-
-        person_value = (
-            job_input.get("model_image")
-            or job_input.get("person_image")
-            or job_input.get("person")
-        )
-
-        if not person_value:
-            raise ValueError(
-                "Person image is required. "
-                "Use model_image or person_image."
+        if not MODEL_READY:
+            raise RuntimeError(
+                f"VASUNDHARA trained checkpoint not found at {MODEL_PATH}. "
+                "Train the model first and place best.pt at that path."
             )
 
-
-        # ----------------------------------------------------
-        # GARMENT IMAGE
-        # ----------------------------------------------------
-
+        job_input = job.get("input", {})
+        person_value = (
+            job_input.get("person_image")
+            or job_input.get("model_image")
+            or job_input.get("person")
+        )
         garment_value = (
             job_input.get("garment_image")
             or job_input.get("cloth_image")
@@ -381,184 +162,75 @@ def handler(job):
             or job_input.get("cloth")
         )
 
+        if not person_value:
+            raise ValueError("Person image is required")
         if not garment_value:
-            raise ValueError(
-                "Garment image is required. "
-                "Use garment_image or cloth_image."
+            raise ValueError("Garment image is required")
+
+        width = max(128, min(int(job_input.get("width", DEFAULT_WIDTH)), 768))
+        height = max(128, min(int(job_input.get("height", DEFAULT_HEIGHT)), 1024))
+        size = (width, height)
+
+        person = decode_image(person_value)
+        garment = decode_image(garment_value)
+
+        clothing_mask_value = (
+            job_input.get("clothing_mask")
+            or job_input.get("cloth_mask")
+            or job_input.get("mask")
+        )
+        face_mask_value = job_input.get("face_mask")
+
+        clothing_mask = decode_mask(clothing_mask_value, size) if clothing_mask_value else None
+        face_mask = decode_mask(face_mask_value, size) if face_mask_value else None
+
+        if clothing_mask is None or face_mask is None:
+            fallback_clothing, fallback_face = fallback_masks(size)
+            clothing_mask = clothing_mask or fallback_clothing
+            face_mask = face_mask or fallback_face
+            print("Using fallback masks; provide trained segmentation masks for production quality.", flush=True)
+
+        person_tensor = image_to_tensor(person, size).to(DEVICE)
+        garment_tensor = image_to_tensor(garment, size).to(DEVICE)
+        clothing_tensor = mask_to_tensor(clothing_mask, size).to(DEVICE)
+        face_tensor = mask_to_tensor(face_mask, size).to(DEVICE)
+
+        seed = int(job_input.get("seed", -1))
+        if seed >= 0:
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+
+        print(f"Running VASUNDHARA inference at {width}x{height}...", flush=True)
+        with torch.inference_mode():
+            output = model(
+                person_tensor,
+                garment_tensor,
+                clothing_tensor,
+                face_tensor,
             )
 
+        output = ((output.clamp(-1, 1) + 1.0) * 127.5).byte()
+        output = output[0].permute(1, 2, 0).cpu().numpy()
+        result = Image.fromarray(output, mode="RGB")
 
-        # ----------------------------------------------------
-        # PARAMETERS
-        # ----------------------------------------------------
-
-        cloth_type = job_input.get(
-            "cloth_type",
-            "overall"
-        )
-
-        steps = int(
-            job_input.get(
-                "steps",
-                DEFAULT_STEPS
-            )
-        )
-
-        guidance_scale = float(
-            job_input.get(
-                "guidance_scale",
-                DEFAULT_GUIDANCE
-            )
-        )
-
-        seed = int(
-            job_input.get(
-                "seed",
-                -1
-            )
-        )
-
-
-        # ----------------------------------------------------
-        # VALIDATION
-        # ----------------------------------------------------
-
-        steps = max(
-            1,
-            min(steps, 80)
-        )
-
-        guidance_scale = max(
-            0.0,
-            min(guidance_scale, 20.0)
-        )
-
-
-        # ----------------------------------------------------
-        # DECODE
-        # ----------------------------------------------------
-
-        print(
-            "Decoding person image...",
-            flush=True
-        )
-
-        person_image = decode_image(
-            person_value
-        )
-
-        print(
-            f"Person size: {person_image.size}",
-            flush=True
-        )
-
-
-        print(
-            "Decoding garment image...",
-            flush=True
-        )
-
-        garment_image = decode_image(
-            garment_value
-        )
-
-        print(
-            f"Garment size: {garment_image.size}",
-            flush=True
-        )
-
-
-        # ----------------------------------------------------
-        # RUN VTON
-        # ----------------------------------------------------
-
-        result = run_tryon(
-            person_image=person_image,
-            garment_image=garment_image,
-            cloth_type=cloth_type,
-            steps=steps,
-            guidance_scale=guidance_scale,
-            seed=seed,
-        )
-
-
-        # ----------------------------------------------------
-        # ENCODE RESULT
-        # ----------------------------------------------------
-
-        print(
-            "Encoding output PNG...",
-            flush=True
-        )
-
-        output_base64 = encode_image(
-            result
-        )
-
-
-        # ----------------------------------------------------
-        # RESPONSE
-        # ----------------------------------------------------
-
-        response = {
+        return {
             "success": True,
-            "image": output_base64,
+            "image": encode_image(result),
             "format": "png",
             "width": result.width,
             "height": result.height,
-            "cloth_type": cloth_type,
-            "steps": steps,
-            "guidance_scale": guidance_scale,
+            "model": "VASUNDHARA-VTON",
+            "checkpoint": MODEL_PATH,
             "seed": seed,
         }
 
-        print(
-            "VTON request completed successfully.",
-            flush=True
-        )
-
-        return response
-
-
     except Exception as exc:
-
-        print(
-            "=" * 60,
-            flush=True
-        )
-
-        print(
-            "VTON ERROR",
-            flush=True
-        )
-
-        print(
-            str(exc),
-            flush=True
-        )
-
         traceback.print_exc()
-
-        print(
-            "=" * 60,
-            flush=True
-        )
-
         return {
             "success": False,
             "error": str(exc),
         }
 
 
-# ============================================================
-# START SERVERLESS WORKER
-# ============================================================
-
-print(
-    "Starting RunPod Serverless worker...",
-    flush=True
-)
-
-runpod.serverless.start({
-    "handler": handler
-})
+print("Starting RunPod Serverless worker...", flush=True)
+runpod.serverless.start({"handler": handler})
