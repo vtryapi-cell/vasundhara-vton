@@ -8,7 +8,7 @@ ENV TRANSFORMERS_CACHE=/workspace/huggingface
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # =========================================================
-# SYSTEM
+# SYSTEM DEPENDENCIES
 # =========================================================
 
 RUN apt-get update && apt-get install -y \
@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir \
     -r /workspace/requirements-serverless.txt
 
 # =========================================================
-# FINAL NUMPY / SCIPY PIN
+# FINAL NUMPY / SCIPY VERSIONS
 # =========================================================
 
 RUN pip install --no-cache-dir --force-reinstall \
@@ -43,7 +43,7 @@ RUN pip install --no-cache-dir --force-reinstall \
     scipy==1.13.1
 
 # =========================================================
-# VERIFY ENVIRONMENT
+# VERIFY PYTHON ENVIRONMENT
 # =========================================================
 
 RUN python - <<'PY'
@@ -58,12 +58,10 @@ print("Python:", sys.version)
 
 import numpy
 print("NumPy:", numpy.__version__)
-
 assert numpy.__version__ == "1.26.4"
 
 import scipy
 print("SciPy:", scipy.__version__)
-
 assert scipy.__version__ == "1.13.1"
 
 import torch
@@ -111,28 +109,55 @@ COPY vton /workspace/vton
 # =========================================================
 
 RUN echo "==============================================" && \
-    echo "VTON FILES" && \
+    echo "VASUNDHARA VTON FILES" && \
     echo "==============================================" && \
     find /workspace/vton -maxdepth 2 -type f -print && \
     echo "=============================================="
 
 # =========================================================
-# CHECK HANDLER IMPORT
+# CHECK HANDLER SYNTAX
+#
+# IMPORTANT:
+# Do NOT "import handler" here.
+#
+# handler.py starts the RunPod worker when executed.
+# Importing it during Docker build could start the worker
+# during the image build.
 # =========================================================
 
 RUN python - <<'PY'
-print("Testing handler import...")
+import ast
 
-import handler
-
-print("handler.py import: OK")
 print("==============================================")
-print("APPLICATION IMPORT TEST PASSED")
+print("Testing handler.py syntax...")
+print("==============================================")
+
+with open("/workspace/handler.py", "r", encoding="utf-8") as f:
+    source = f.read()
+
+ast.parse(source)
+
+print("handler.py syntax: OK")
+
+print("==============================================")
+print("APPLICATION SYNTAX TEST PASSED")
 print("==============================================")
 PY
 
 # =========================================================
-# START RUNPOD
+# FINAL STARTUP TEST
+# =========================================================
+
+RUN test -f /workspace/handler.py && \
+    test -d /workspace/vton && \
+    echo "==============================================" && \
+    echo "APPLICATION FILE CHECK PASSED" && \
+    echo "handler.py: OK" && \
+    echo "vton/: OK" && \
+    echo "=============================================="
+
+# =========================================================
+# START RUNPOD SERVERLESS WORKER
 # =========================================================
 
 CMD ["python", "-u", "/workspace/handler.py"]
