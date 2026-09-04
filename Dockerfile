@@ -7,9 +7,9 @@ ENV HF_HOME=/workspace/huggingface
 ENV TRANSFORMERS_CACHE=/workspace/huggingface
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# ---------------------------------------------------------
-# System packages
-# ---------------------------------------------------------
+# =========================================================
+# SYSTEM DEPENDENCIES
+# =========================================================
 
 RUN apt-get update && apt-get install -y \
     git \
@@ -19,31 +19,33 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# ---------------------------------------------------------
-# Python dependencies
-# IMPORTANT:
-# Do not upgrade/reinstall system cryptography.
-# ---------------------------------------------------------
+# =========================================================
+# PYTHON DEPENDENCIES
+# =========================================================
 
 COPY requirements-serverless.txt /workspace/requirements-serverless.txt
 
 RUN pip install --no-cache-dir --ignore-installed \
     -r /workspace/requirements-serverless.txt
 
-# ---------------------------------------------------------
-# CatVTON
-# ---------------------------------------------------------
+# =========================================================
+# CATVTON
+# =========================================================
 
 RUN git clone --depth 1 \
     https://github.com/Zheng-Chong/CatVTON.git \
     /workspace/CatVTON
 
-# ---------------------------------------------------------
-# Worker
-# ---------------------------------------------------------
+# =========================================================
+# APPLICATION
+# =========================================================
 
 COPY handler.py /workspace/handler.py
 
 ENV CATVTON_ROOT=/workspace/CatVTON
+
+# =========================================================
+# START RUNPOD SERVERLESS WORKER
+# =========================================================
 
 CMD ["python", "-u", "/workspace/handler.py"]
