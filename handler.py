@@ -4,6 +4,7 @@ import os
 import traceback
 from pathlib import Path
 
+import numpy as np
 import runpod
 import torch
 from PIL import Image
@@ -92,13 +93,11 @@ def fallback_masks(size):
     clothing = Image.new("L", size, 0)
     face = Image.new("L", size, 0)
 
-    # Broad torso region, leaving the head mostly untouched.
     clothing_pixels = clothing.load()
     for y in range(int(height * 0.25), int(height * 0.92)):
         for x in range(int(width * 0.12), int(width * 0.88)):
             clothing_pixels[x, y] = 255
 
-    # Broad face region near the top of the image.
     face_pixels = face.load()
     for y in range(0, int(height * 0.24)):
         for x in range(int(width * 0.25), int(width * 0.75)):
@@ -186,9 +185,14 @@ def handler(job):
 
         if clothing_mask is None or face_mask is None:
             fallback_clothing, fallback_face = fallback_masks(size)
-            clothing_mask = clothing_mask or fallback_clothing
-            face_mask = face_mask or fallback_face
-            print("Using fallback masks; provide trained segmentation masks for production quality.", flush=True)
+            if clothing_mask is None:
+                clothing_mask = fallback_clothing
+            if face_mask is None:
+                face_mask = fallback_face
+            print(
+                "Using fallback masks; provide trained segmentation masks for production quality.",
+                flush=True,
+            )
 
         person_tensor = image_to_tensor(person, size).to(DEVICE)
         garment_tensor = image_to_tensor(garment, size).to(DEVICE)
@@ -211,7 +215,7 @@ def handler(job):
 
         output = ((output.clamp(-1, 1) + 1.0) * 127.5).byte()
         output = output[0].permute(1, 2, 0).cpu().numpy()
-        result = Image.fromarray(output, mode="RGB")
+        result = Image.fromarray(np.asarray(output), mode="RGB")
 
         return {
             "success": True,
