@@ -18,6 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Serverless worker dependencies only.
+# Gradio is intentionally excluded: handler.py does not use it, and
+# gradio==4.41.0 conflicts with runpod==1.12.0 through tomlkit.
 RUN python -m pip install --no-cache-dir \
     numpy==1.26.4 \
     scipy==1.13.1 \
@@ -41,7 +44,6 @@ RUN python -m pip install --no-cache-dir \
     omegaconf==2.3.0 \
     pycocotools==2.0.8 \
     runpod==1.12.0 \
-    gradio==4.41.0 \
     requests
 
 # CatVTON-compatible Detectron2/DensePose. Pinned to v0.6.
