@@ -5,10 +5,14 @@ opencv-python-headless==4.10.0.84
 Pillow==10.4.0
 scipy==1.14.1
 
+# CatVTON / Diffusers runtime stack
+# Pinned for Python 3.12 compatibility on the RunPod Ubuntu 24.04 image.
+diffusers==0.29.2
 safetensors==0.4.5
 huggingface-hub==0.26.2
 transformers==4.46.3
 accelerate==1.0.1
+tokenizers==0.20.3
 
 einops==0.8.2
 sentencepiece==0.2.2
