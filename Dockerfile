@@ -36,20 +36,21 @@ RUN python -m pip uninstall -y \
 # Stable scientific stack.
 RUN python -m pip install --no-cache-dir \
     numpy==1.26.4 \
-    scipy==1.13.1 \
-    Pillow==10.3.0 \
+    scipy==1.14.1 \
+    Pillow==10.4.0 \
     opencv-python-headless==4.10.0.84
 
-# CatVTON-compatible diffusion stack.
+# CatVTON-compatible diffusion stack for Python 3.12.
+# tokenizers 0.20.3 has a Python 3.12 wheel, avoiding a Rust source build.
 RUN python -m pip install --no-cache-dir \
     diffusers==0.29.2 \
-    transformers==4.27.3 \
-    accelerate==0.31.0 \
+    transformers==4.46.3 \
+    accelerate==1.0.1 \
     safetensors==0.4.5 \
-    huggingface-hub==0.23.4 \
-    tokenizers==0.13.3 \
-    sentencepiece \
-    protobuf \
+    huggingface-hub==0.26.2 \
+    tokenizers==0.20.3 \
+    sentencepiece==0.2.2 \
+    protobuf==4.25.8 \
     tqdm==4.66.4 \
     scikit-image==0.24.0 \
     matplotlib==3.9.1 \
@@ -66,8 +67,8 @@ RUN git clone --depth 1 https://github.com/Zheng-Chong/CatVTON.git /workspace/Ca
 
 # Runtime/application packages.
 RUN python -m pip install --no-cache-dir \
-    runpod \
-    einops \
+    runpod==1.12.0 \
+    einops==0.8.2 \
     requests \
     gradio
 
@@ -77,22 +78,21 @@ COPY . /workspace
 # ------------------------------------------------------------
 # FINAL DEPENDENCY LOCK
 # ------------------------------------------------------------
-# Run this after COPY so the final image always contains the exact
-# diffusion packages required by handler.py.
+# Re-assert exact versions after COPY so no project install can replace them.
 RUN python -m pip install --no-cache-dir \
     "diffusers==0.29.2" \
-    "transformers==4.27.3" \
-    "accelerate==0.31.0" \
+    "transformers==4.46.3" \
+    "accelerate==1.0.1" \
     "safetensors==0.4.5" \
-    "huggingface-hub==0.23.4" \
-    "tokenizers==0.13.3"
+    "huggingface-hub==0.26.2" \
+    "tokenizers==0.20.3"
 
 # ------------------------------------------------------------
 # HARD BUILD VALIDATION
 # ------------------------------------------------------------
-# The Docker build MUST fail here if Diffusers is missing/broken.
+# The Docker build MUST fail here if the diffusion environment is broken.
 # We intentionally do NOT import handler.py during build because handler.py
-# loads the GPU model at import time.
+# loads the GPU model and downloads weights at import time.
 RUN python - <<'PY'
 import sys
 import numpy
@@ -104,6 +104,7 @@ import transformers
 import accelerate
 import safetensors
 import huggingface_hub
+import tokenizers
 from PIL import Image
 from diffusers.image_processor import VaeImageProcessor
 
@@ -122,6 +123,7 @@ print("Transformers:", transformers.__version__)
 print("Accelerate:", accelerate.__version__)
 print("Safetensors:", safetensors.__version__)
 print("HuggingFace Hub:", huggingface_hub.__version__)
+print("Tokenizers:", tokenizers.__version__)
 print("Pillow:", Image.__version__)
 print("VaeImageProcessor: OK")
 print("========================================")
