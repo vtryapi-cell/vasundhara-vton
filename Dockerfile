@@ -8,9 +8,6 @@ ENV TRANSFORMERS_CACHE=/workspace/huggingface
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ENV PIP_NO_CACHE_DIR=1
 
-# ---------------------------------------------------------
-# System packages
-# ---------------------------------------------------------
 RUN apt-get update && apt-get install -y \
     git \
     wget \
@@ -22,10 +19,6 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
-# ---------------------------------------------------------
-# IMPORTANT:
-# Clean conflicting preinstalled scientific packages
-# ---------------------------------------------------------
 RUN python -m pip uninstall -y \
     numpy \
     scipy \
@@ -38,16 +31,10 @@ RUN python -m pip uninstall -y \
     opencv-python-headless \
     2>/dev/null || true
 
-# ---------------------------------------------------------
-# Stable NumPy/SciPy versions for this environment
-# ---------------------------------------------------------
 RUN python -m pip install --no-cache-dir \
     numpy==1.26.4 \
     scipy==1.13.1
 
-# ---------------------------------------------------------
-# HuggingFace / Diffusion stack
-# ---------------------------------------------------------
 RUN python -m pip install --no-cache-dir \
     diffusers==0.30.3 \
     transformers==4.44.2 \
@@ -56,9 +43,6 @@ RUN python -m pip install --no-cache-dir \
     huggingface-hub==0.24.6 \
     tokenizers==0.19.1
 
-# ---------------------------------------------------------
-# Image / utility packages
-# ---------------------------------------------------------
 RUN python -m pip install --no-cache-dir \
     Pillow \
     opencv-python-headless \
@@ -67,11 +51,6 @@ RUN python -m pip install --no-cache-dir \
     requests \
     gradio
 
-# ---------------------------------------------------------
-# VERIFY ENVIRONMENT DURING BUILD
-# If this fails, Docker build stops here instead of
-# producing a broken RunPod worker.
-# ---------------------------------------------------------
 RUN python - <<'PY'
 import sys
 import numpy
@@ -107,35 +86,43 @@ print("BUILD ENVIRONMENT OK")
 print("========================================")
 PY
 
-# ---------------------------------------------------------
-# Copy project
-# ---------------------------------------------------------
 COPY . /workspace
 
-# ---------------------------------------------------------
-# Verify CatVTON source exists
-# ---------------------------------------------------------
 RUN test -f /workspace/handler.py
 RUN test -f /workspace/CatVTON/model/pipeline.py
+RUN test -f /workspace/vton/model.py
+RUN test -f /workspace/vton/train_dataset.py
+RUN test -f /workspace/train.py
 
-# ---------------------------------------------------------
-# Final CatVTON import test
-# ---------------------------------------------------------
 RUN python - <<'PY'
 import sys
-sys.path.insert(0, "/workspace")
+sys.path.insert(0, "/workspace/CatVTON")
 
 print("Testing CatVTON import...")
-
 from model.pipeline import CatVTONPipeline
+from model.cloth_masker import AutoMasker
 
 print("CatVTONPipeline import: OK")
+print("AutoMasker import: OK")
 print("========================================")
 print("CATVTON BUILD CHECK PASSED")
 print("========================================")
 PY
 
-# ---------------------------------------------------------
-# Start RunPod worker
-# ---------------------------------------------------------
+RUN python - <<'PY'
+import sys
+sys.path.insert(0, "/workspace")
+
+print("Testing Vasundhara VTON import...")
+from vton.model import create_model
+from vton.train_dataset import VTONDataset
+
+model = create_model(device="cpu")
+print("VasundharaVTON import: OK")
+print("Trainable parameters:", sum(p.numel() for p in model.parameters()))
+print("========================================")
+print("VASUNDHARA VTON BUILD CHECK PASSED")
+print("========================================")
+PY
+
 CMD ["python", "-u", "/workspace/handler.py"]
