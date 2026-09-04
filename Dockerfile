@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip uninstall -y numpy scipy || true
 
 # =========================================================
-# REQUIREMENTS
+# INSTALL REQUIREMENTS
 # =========================================================
 
 COPY requirements-serverless.txt /workspace/requirements-serverless.txt
@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir \
     -r /workspace/requirements-serverless.txt
 
 # =========================================================
-# FINAL NUMPY / SCIPY VERSIONS
+# PIN NUMPY / SCIPY
 # =========================================================
 
 RUN pip install --no-cache-dir --force-reinstall \
@@ -43,13 +43,12 @@ RUN pip install --no-cache-dir --force-reinstall \
     scipy==1.13.1
 
 # =========================================================
-# VERIFY PYTHON ENVIRONMENT
+# VERIFY ENVIRONMENT
 # =========================================================
 
 RUN python - <<'PY'
 import sys
 
-print("")
 print("==============================================")
 print("VASUNDHARA VTON - BUILD ENVIRONMENT TEST")
 print("==============================================")
@@ -84,14 +83,13 @@ print("SciPy sparse: OK")
 import scipy.stats
 print("SciPy stats: OK")
 
-print("")
 print("==============================================")
 print("SCIENTIFIC STACK OK")
 print("==============================================")
 PY
 
 # =========================================================
-# CHECK PYTHON DEPENDENCIES
+# DEPENDENCY CHECK
 # =========================================================
 
 RUN pip check
@@ -105,7 +103,7 @@ COPY handler.py /workspace/handler.py
 COPY vton /workspace/vton
 
 # =========================================================
-# CHECK APPLICATION FILES
+# CHECK VTON FILES
 # =========================================================
 
 RUN echo "==============================================" && \
@@ -118,11 +116,8 @@ RUN echo "==============================================" && \
 # CHECK HANDLER SYNTAX
 #
 # IMPORTANT:
-# Do NOT "import handler" here.
-#
+# Do NOT import handler.py during build.
 # handler.py starts the RunPod worker when executed.
-# Importing it during Docker build could start the worker
-# during the image build.
 # =========================================================
 
 RUN python - <<'PY'
@@ -145,7 +140,7 @@ print("==============================================")
 PY
 
 # =========================================================
-# FINAL STARTUP TEST
+# FINAL APPLICATION CHECK
 # =========================================================
 
 RUN test -f /workspace/handler.py && \
