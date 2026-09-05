@@ -86,8 +86,8 @@ def fallback_masks(size):
     """Simple fallback only for endpoint smoke tests.
 
     Production-quality results should send trained segmentation masks from
-    the data/segmentation pipeline. The own VASUNDHARA model itself does not
-    depend on CatVTON, DensePose, Detectron2, or any external VTON model.
+    the saree/person segmentation pipeline. These masks are intentionally
+    conservative and are not a substitute for trained segmentation.
     """
     width, height = size
     clothing = Image.new("L", size, 0)
@@ -149,29 +149,35 @@ def handler(job):
             )
 
         job_input = job.get("input", {})
+
+        # The public VASUNDHARA API uses person_image + saree_image.
+        # garment_image/cloth_image remain accepted for backwards compatibility.
         person_value = (
             job_input.get("person_image")
             or job_input.get("model_image")
             or job_input.get("person")
         )
-        garment_value = (
-            job_input.get("garment_image")
+        saree_value = (
+            job_input.get("saree_image")
+            or job_input.get("product_image")
+            or job_input.get("garment_image")
             or job_input.get("cloth_image")
+            or job_input.get("saree")
             or job_input.get("garment")
             or job_input.get("cloth")
         )
 
         if not person_value:
             raise ValueError("Person image is required")
-        if not garment_value:
-            raise ValueError("Garment image is required")
+        if not saree_value:
+            raise ValueError("Saree image is required")
 
         width = max(128, min(int(job_input.get("width", DEFAULT_WIDTH)), 768))
         height = max(128, min(int(job_input.get("height", DEFAULT_HEIGHT)), 1024))
         size = (width, height)
 
         person = decode_image(person_value)
-        garment = decode_image(garment_value)
+        saree = decode_image(saree_value)
 
         clothing_mask_value = (
             job_input.get("clothing_mask")
@@ -190,12 +196,15 @@ def handler(job):
             if face_mask is None:
                 face_mask = fallback_face
             print(
-                "Using fallback masks; provide trained segmentation masks for production quality.",
+                "Using fallback person masks; trained segmentation masks are recommended for production quality.",
                 flush=True,
             )
 
         person_tensor = image_to_tensor(person, size).to(DEVICE)
-        garment_tensor = image_to_tensor(garment, size).to(DEVICE)
+        # A flat-lay saree product photo is intentionally passed as the garment
+        # tensor without treating it as a shirt/dress crop. Saree-specific
+        # draping/segmentation is part of the training pipeline.
+        saree_tensor = image_to_tensor(saree, size).to(DEVICE)
         clothing_tensor = mask_to_tensor(clothing_mask, size).to(DEVICE)
         face_tensor = mask_to_tensor(face_mask, size).to(DEVICE)
 
@@ -204,11 +213,11 @@ def handler(job):
             torch.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
 
-        print(f"Running VASUNDHARA inference at {width}x{height}...", flush=True)
+        print(f"Running VASUNDHARA saree inference at {width}x{height}...", flush=True)
         with torch.inference_mode():
             output = model(
                 person_tensor,
-                garment_tensor,
+                saree_tensor,
                 clothing_tensor,
                 face_tensor,
             )
@@ -224,6 +233,7 @@ def handler(job):
             "width": result.width,
             "height": result.height,
             "model": "VASUNDHARA-VTON",
+            "input_type": "flat_lay_saree",
             "checkpoint": MODEL_PATH,
             "seed": seed,
         }
