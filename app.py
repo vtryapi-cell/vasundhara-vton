@@ -1,349 +1,111 @@
-```python
+import base64
 import os
-import sys
-import subprocess
 
-import torch
-import gradio as gr
-import spaces
+import requests
+from flask import Flask, jsonify, render_template, request
 
-# ============================================================
-# 1. CatVTON SOURCE
-# ============================================================
+app = Flask(__name__)
 
-CATVTON_ROOT = "/home/user/app/CatVTON"
+RUNPOD_ENDPOINT_URL = os.environ.get("RUNPOD_ENDPOINT_URL", "").strip()
+RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY", "").strip()
+RUNPOD_TIMEOUT = int(os.environ.get("RUNPOD_TIMEOUT", "180"))
 
-if not os.path.exists(os.path.join(CATVTON_ROOT, "model")):
-    print("CatVTON source not found. Cloning...")
-    subprocess.run(
-        [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            "https://github.com/Zheng-Chong/CatVTON.git",
-            CATVTON_ROOT,
-        ],
-        check=True,
+
+def image_to_base64(upload):
+    if upload is None or not upload.filename:
+        raise ValueError("Image upload is missing")
+    raw = upload.read()
+    if not raw:
+        raise ValueError(f"Empty image upload: {upload.filename}")
+    return base64.b64encode(raw).decode("utf-8")
+
+
+def call_vasundhara(person_b64, saree_b64, seed=42, width=384, height=512):
+    if not RUNPOD_ENDPOINT_URL:
+        raise RuntimeError("RUNPOD_ENDPOINT_URL is not configured")
+    if not RUNPOD_API_KEY:
+        raise RuntimeError("RUNPOD_API_KEY is not configured")
+
+    payload = {
+        "input": {
+            "person_image": person_b64,
+            "saree_image": saree_b64,
+            "seed": int(seed),
+            "width": int(width),
+            "height": int(height),
+        }
+    }
+
+    response = requests.post(
+        RUNPOD_ENDPOINT_URL,
+        headers={
+            "Authorization": f"Bearer {RUNPOD_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=RUNPOD_TIMEOUT,
     )
+    response.raise_for_status()
+    data = response.json()
 
-if CATVTON_ROOT not in sys.path:
-    sys.path.insert(0, CATVTON_ROOT)
+    if data.get("status") not in (None, "COMPLETED"):
+        raise RuntimeError(f"RunPod job status: {data.get('status')}")
 
+    output = data.get("output", data)
+    if not isinstance(output, dict):
+        raise RuntimeError("RunPod returned an invalid output")
+    if not output.get("success", True):
+        raise RuntimeError(output.get("error", "VASUNDHARA inference failed"))
+    if not output.get("image"):
+        raise RuntimeError("RunPod response did not contain an output image")
 
-# ============================================================
-# 2. CATVTON IMPORTS
-# ============================================================
-
-from diffusers.image_processor import VaeImageProcessor
-from huggingface_hub import snapshot_download
-
-from model.cloth_masker import AutoMasker
-from model.pipeline import CatVTONPipeline
-from utils import (
-    init_weight_dtype,
-    resize_and_crop,
-    resize_and_padding,
-)
+    return output
 
 
-# ============================================================
-# 3. MODEL CONFIGURATION
-# ============================================================
-
-MODEL_REPO = "zhengchong/CatVTON"
-
-BASE_MODEL = "booksforcharlie/stable-diffusion-inpainting"
-
-WIDTH = 768
-HEIGHT = 1024
-
-STEPS = 40
-GUIDANCE = 2.5
-
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-print("========================================")
-print("VASUNDHARA SAREE VIRTUAL TRY-ON")
-print("CatVTON")
-print("Device:", DEVICE)
-print("========================================")
+@app.get("/")
+def home():
+    return render_template("index.html")
 
 
-# ============================================================
-# 4. MODEL LOADING
-# ============================================================
+@app.get("/health")
+def health():
+    return jsonify({
+        "ok": True,
+        "service": "vasundhara-web-api",
+        "runpod_configured": bool(RUNPOD_ENDPOINT_URL and RUNPOD_API_KEY),
+    })
 
-pipeline = None
-automasker = None
-mask_processor = None
-model_error = None
 
-
-def load_models():
-
-    global pipeline
-    global automasker
-    global mask_processor
-    global model_error
-
-    if DEVICE != "cuda":
-        model_error = (
-            "CUDA GPU is required. "
-            "This application must run inside a Hugging Face "
-            "ZeroGPU-enabled Space."
-        )
-
-        print(model_error)
-
-        return
-
+@app.post("/api/tryon")
+def tryon():
     try:
+        person = request.files.get("person") or request.files.get("person_image")
+        saree = request.files.get("saree") or request.files.get("saree_image")
+        if person is None:
+            return jsonify({"success": False, "error": "Please upload a person photo."}), 400
+        if saree is None:
+            return jsonify({"success": False, "error": "Please upload a saree photo."}), 400
 
-        print("Downloading CatVTON model...")
+        seed = request.form.get("seed", 42)
+        width = request.form.get("width", 384)
+        height = request.form.get("height", 512)
 
-        repo_path = snapshot_download(
-            repo_id=MODEL_REPO
+        output = call_vasundhara(
+            image_to_base64(person),
+            image_to_base64(saree),
+            seed=seed,
+            width=width,
+            height=height,
         )
 
-        print("Initializing precision...")
+        return jsonify({"success": True, **output})
 
-        weight_dtype = init_weight_dtype("bf16")
-
-        print("Loading CatVTON pipeline...")
-
-        pipeline = CatVTONPipeline(
-            base_ckpt=BASE_MODEL,
-            attn_ckpt=repo_path,
-            attn_ckpt_version="mix",
-            weight_dtype=weight_dtype,
-            use_tf32=True,
-            device="cuda",
-        )
-
-        print("Creating mask processor...")
-
-        mask_processor = VaeImageProcessor(
-            vae_scale_factor=8,
-            do_normalize=False,
-            do_binarize=True,
-            do_convert_grayscale=True,
-        )
-
-        print("Loading AutoMasker...")
-
-        automasker = AutoMasker(
-            densepose_ckpt=os.path.join(
-                repo_path,
-                "DensePose",
-            ),
-            schp_ckpt=os.path.join(
-                repo_path,
-                "SCHP",
-            ),
-            device="cuda",
-        )
-
-        print("========================================")
-        print("MODEL READY")
-        print("========================================")
-
+    except requests.HTTPError as exc:
+        body = exc.response.text[:1000] if exc.response is not None else str(exc)
+        return jsonify({"success": False, "error": f"RunPod HTTP error: {body}"}), 502
     except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 500
 
-        model_error = repr(exc)
-
-        print("MODEL LOAD ERROR:")
-        print(model_error)
-
-
-# Load models when Space starts
-load_models()
-
-
-# ============================================================
-# 5. SAREE TRY-ON
-# ============================================================
-
-@spaces.GPU(duration=120)
-def saree_tryon(
-    person_img,
-    saree_img,
-    seed=42,
-):
-
-    if person_img is None:
-        raise gr.Error(
-            "Please upload a person photo."
-        )
-
-    if saree_img is None:
-        raise gr.Error(
-            "Please upload a saree photo."
-        )
-
-    if pipeline is None or automasker is None:
-        raise gr.Error(
-            "VTON model is not ready. "
-            f"{model_error or ''}"
-        )
-
-    try:
-
-        # ----------------------------------------------------
-        # Convert to RGB
-        # ----------------------------------------------------
-
-        person_img = person_img.convert("RGB")
-        saree_img = saree_img.convert("RGB")
-
-        # ----------------------------------------------------
-        # Prepare person image
-        # ----------------------------------------------------
-
-        person = resize_and_crop(
-            person_img,
-            (WIDTH, HEIGHT),
-        )
-
-        # ----------------------------------------------------
-        # Prepare saree image
-        # ----------------------------------------------------
-
-        garment = resize_and_padding(
-            saree_img,
-            (WIDTH, HEIGHT),
-        )
-
-        # ----------------------------------------------------
-        # Generate clothing mask
-        # ----------------------------------------------------
-
-        mask_data = automasker(
-            person,
-            "overall",
-        )
-
-        mask = mask_data["mask"]
-
-        mask = mask_processor.blur(
-            mask,
-            blur_factor=9,
-        )
-
-        # ----------------------------------------------------
-        # Random/selected seed
-        # ----------------------------------------------------
-
-        seed = int(seed)
-
-        generator = torch.Generator(
-            device="cuda"
-        ).manual_seed(seed)
-
-        # ----------------------------------------------------
-        # CatVTON generation
-        # ----------------------------------------------------
-
-        result = pipeline(
-            image=person,
-            condition_image=garment,
-            mask=mask,
-            num_inference_steps=STEPS,
-            guidance_scale=GUIDANCE,
-            height=HEIGHT,
-            width=WIDTH,
-            generator=generator,
-        )[0]
-
-        return result
-
-    except torch.cuda.OutOfMemoryError:
-
-        torch.cuda.empty_cache()
-
-        raise gr.Error(
-            "GPU memory is insufficient. "
-            "Try a smaller image or fewer inference steps."
-        )
-
-    except Exception as exc:
-
-        print(
-            "TRY-ON ERROR:",
-            repr(exc),
-        )
-
-        raise gr.Error(
-            f"Try-on failed: {exc}"
-        )
-
-
-# ============================================================
-# 6. GRADIO USER INTERFACE
-# ============================================================
-
-with gr.Blocks(
-    title="Vasundhara Saree Virtual Try-On"
-) as interface:
-
-    gr.Markdown(
-        """
-        # 👗 Vasundhara Saree Virtual Try-On
-
-        Upload a **person photo** and a **saree/product photo**.
-
-        CatVTON will generate a virtual try-on result.
-        """
-    )
-
-    with gr.Row():
-
-        with gr.Column():
-
-            person_input = gr.Image(
-                type="pil",
-                label="👩 Person Photo",
-            )
-
-            saree_input = gr.Image(
-                type="pil",
-                label="🥻 Saree Photo",
-            )
-
-            seed_input = gr.Number(
-                value=42,
-                precision=0,
-                label="Seed",
-            )
-
-            try_button = gr.Button(
-                "✨ Generate Saree Try-On",
-                variant="primary",
-            )
-
-        with gr.Column():
-
-            result_output = gr.Image(
-                type="pil",
-                label="✨ Virtual Saree Result",
-            )
-
-    try_button.click(
-        fn=saree_tryon,
-        inputs=[
-            person_input,
-            saree_input,
-            seed_input,
-        ],
-        outputs=result_output,
-    )
-
-
-# ============================================================
-# 7. START SPACE
-# ============================================================
 
 if __name__ == "__main__":
-
-    interface.launch()
-```
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "7860")))
