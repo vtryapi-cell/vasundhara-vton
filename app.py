@@ -20,6 +20,14 @@ def image_to_base64(upload):
     return base64.b64encode(raw).decode("utf-8")
 
 
+def first_file(*names):
+    for name in names:
+        value = request.files.get(name)
+        if value is not None and value.filename:
+            return value
+    return None
+
+
 def call_vasundhara(person_b64, saree_b64, seed=42, width=384, height=512):
     if not RUNPOD_ENDPOINT_URL:
         raise RuntimeError("RUNPOD_ENDPOINT_URL is not configured")
@@ -48,8 +56,9 @@ def call_vasundhara(person_b64, saree_b64, seed=42, width=384, height=512):
     response.raise_for_status()
     data = response.json()
 
-    if data.get("status") not in (None, "COMPLETED"):
-        raise RuntimeError(f"RunPod job status: {data.get('status')}")
+    status = data.get("status")
+    if status not in (None, "COMPLETED"):
+        raise RuntimeError(f"RunPod job status: {status}")
 
     output = data.get("output", data)
     if not isinstance(output, dict):
@@ -79,8 +88,13 @@ def health():
 @app.post("/api/tryon")
 def tryon():
     try:
-        person = request.files.get("person") or request.files.get("person_image")
-        saree = request.files.get("saree") or request.files.get("saree_image")
+        # The existing website sends model_image + garment_image.
+        # Keep all aliases supported by handler.py as well.
+        person = first_file("person", "person_image", "model_image", "person_photo")
+        saree = first_file(
+            "saree", "saree_image", "garment_image", "cloth_image", "product_image"
+        )
+
         if person is None:
             return jsonify({"success": False, "error": "Please upload a person photo."}), 400
         if saree is None:
